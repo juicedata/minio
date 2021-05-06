@@ -65,8 +65,7 @@ func (l *GatewayLocker) Walk(ctx context.Context, bucket, prefix string, results
 			var marker string
 
 			for {
-				// set maxKeys to '0' to list maximum possible objects in single call.
-				loi, err := l.ObjectLayer.ListObjects(ctx, bucket, prefix, marker, "", 0)
+				loi, err := l.ObjectLayer.ListObjects(ctx, bucket, prefix, marker, "", maxObjectList)
 				if err != nil {
 					logger.LogIf(ctx, err)
 					return
