@@ -1,6 +1,6 @@
 ## Introduction
 
-This is a fork base on [MinIO RELEASE.2022-03-05T06-32-39Z version](https://github.com/minio/minio/tree/RELEASE.2022-03-05T06-32-39Z). We implemented the feature of [JuiceFS](https://github.com/juicedata/juicefs) as one of its gateway implementations. This version supports full functionality of MinIO gateway such as [multi-user management](https://docs.min.io/docs/minio-multi-user-quickstart-guide.html) while using JuiceFS as a backend.
+This is a fork base on [MinIO RELEASE.2022-03-05T06-32-39Z version](https://github.com/minio/minio/tree/RELEASE.2022-03-05T06-32-39Z). We implemented the feature of [JuiceFS](https://github.com/juicedata/juicefs) as one of its gateway backend. This version supports full functionality of MinIO gateway such as [multi-user management](https://docs.min.io/docs/minio-multi-user-quickstart-guide.html) while using JuiceFS as a backend.
 
 ## Compile
 
