@@ -181,6 +181,9 @@ func listObjectsNonSlash(ctx context.Context, bucket, prefix, marker, delimiter 
 				}...) {
 					continue
 				}
+				if _, ok := err.(ObjectNotFound); ok {
+					continue
+				}
 				return loi, toObjectErr(err, bucket, prefix)
 			}
 		} else {
@@ -372,6 +375,9 @@ func listObjects(ctx context.Context, obj ObjectLayer, bucket, prefix, marker, d
 				errFileNotFound,
 				errErasureReadQuorum,
 			}...) {
+				continue
+			}
+			if _, ok := err.(ObjectNotFound); ok {
 				continue
 			}
 			return loi, toObjectErr(err, bucket, prefix)
