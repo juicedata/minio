@@ -22,7 +22,7 @@ echo "os=$os"
 
 MINT_DATA_DIR=testdata
 MINT_MODE=core
-SERVER_ENDPOINT="127.0.0.1:9009"
+SERVER_ENDPOINT="127.0.0.1:9008"
 ACCESS_KEY="testUser"
 SECRET_KEY="testUserPassword"
 ENABLE_HTTPS=0
