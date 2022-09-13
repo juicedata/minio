@@ -26,7 +26,7 @@ require (
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
 	github.com/hashicorp/vault/api v1.0.4
-	github.com/json-iterator/go v1.1.11
+	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.13.4
 	github.com/klauspost/cpuid v1.3.1
 	github.com/klauspost/pgzip v1.2.5
