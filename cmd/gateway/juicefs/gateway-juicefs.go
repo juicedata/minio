@@ -474,10 +474,10 @@ func (n *JfsObjects) setFileAtime(p string, atime int64) {
 	if f, eno := n.fs.Open(mctx, p, 0); eno == 0 {
 		defer f.Close(mctx)
 		if eno := f.Utime(mctx, atime, -1); eno != 0 {
-			logger.Warnf("set file atime failed: %s: %s", p, eno)
+			logger.Warnf("set atime of %s: %s", p, eno)
 		}
-	} else {
-		logger.Warnf("open failed: %s %s", p, eno)
+	} else if eno != syscall.ENOENT {
+		logger.Warnf("open %s: %s", p, eno)
 	}
 }
 
@@ -487,23 +487,15 @@ func (n *JfsObjects) DeleteObject(ctx context.Context, bucket, object string, op
 	}
 	info.Bucket = bucket
 	info.Name = object
-	p := n.path(bucket, object)
+	p := path.Clean(n.path(bucket, object))
 	root := n.path(bucket)
 	if strings.HasSuffix(object, sep) {
-		n.setFileAtime(n.path(bucket, object), time.Now().Unix())
+		// reset atime
+		n.setFileAtime(p, time.Now().Unix())
 	}
-	// p should not end with /  because if p=/d1/d2/  next step p is /d1/d2 instead of /d1 as expected
-	p = path.Clean(p)
 	for p != root {
-		if f, eno := n.fs.Open(mctx, p, 0); eno == 0 {
-			if fi, _ := f.Stat(); fi.(*fs.FileStat).Atime() == 0 {
-				break
-			}
-		} else {
-			logger.Warnf("open failed: %s %s", p, eno)
-		}
 		if eno := n.fs.Delete(mctx, p); eno != 0 {
-			if fs.IsNotEmpty(eno) {
+			if fs.IsNotEmpty(eno) || fs.IsNotExist(eno) {
 				err = nil
 			} else {
 				err = eno
@@ -511,6 +503,9 @@ func (n *JfsObjects) DeleteObject(ctx context.Context, bucket, object string, op
 			break
 		}
 		p = path.Dir(p)
+		if fi, _ := n.fs.Stat(mctx, p); fi == nil || fi.Atime() == 0 {
+			break
+		}
 	}
 	return info, jfsToObjectErr(ctx, err, bucket, object)
 }
