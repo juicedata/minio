@@ -46,7 +46,9 @@ if [ ! -f ./mc ]; then
   git clone -b RELEASE.2021-11-05T10-05-06Z https://github.com/minio/mc.git && cd mc
   go mod tidy
   make
-  cp ./mc ../
+  pwd
+  ls
+  cp mc ./../
   cd -
   chmod +x .mc
 
