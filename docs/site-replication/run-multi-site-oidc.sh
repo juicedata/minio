@@ -44,6 +44,7 @@ minio server --address ":9003" --console-address ":12000" /tmp/minio3/{1...4} >/
 
 if [ ! -f ./mc ]; then
   git clone -b RELEASE.2021-11-05T10-05-06Z https://github.com/minio/mc.git && cd mc
+  go mod tidy
   make
   cp ./mc ../
   cd -
