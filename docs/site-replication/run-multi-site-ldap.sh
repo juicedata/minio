@@ -36,6 +36,8 @@ export MINIO_IDENTITY_LDAP_USER_DN_SEARCH_FILTER="(uid=%s)"
 export MINIO_IDENTITY_LDAP_GROUP_SEARCH_BASE_DN="ou=swengg,dc=min,dc=io"
 export MINIO_IDENTITY_LDAP_GROUP_SEARCH_FILTER="(&(objectclass=groupOfNames)(member=%d))"
 
+set -x
+rm -rf ./mc
 if [ ! -f ./mc ]; then
     git clone -b RELEASE.2022-10-22T03-39-29Z https://github.com/minio/mc.git && mv mc mc_repo && cd mc_repo
       go mod tidy

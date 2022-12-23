@@ -28,6 +28,8 @@ export MINIO_KMS_AUTO_ENCRYPTION=off
 export MINIO_PROMETHEUS_AUTH_TYPE=public
 export MINIO_KMS_SECRET_KEY=my-minio-key:OSMM+vkKUTCvQs9YL/CVMIMt43HFhkUpqJxTmGl6rYw=
 
+set -x
+rm -rf ./mc
 if [ ! -f ./mc ]; then
     git clone -b RELEASE.2022-11-17T21-20-39Z https://github.com/minio/mc.git && mv mc mc_repo && cd mc_repo
     go mod tidy
