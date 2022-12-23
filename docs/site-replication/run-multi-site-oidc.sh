@@ -48,9 +48,9 @@ if [ ! -f ./mc ]; then
   make
   pwd
   ls
-  cp mc ./../
+  cp -f mc ./../
   cd -
-  chmod +x .mc
+  chmod +x mc
 
 #    wget -O mc https://dl.minio.io/client/mc/release/linux-amd64/mc \
 #        && chmod +x mc
