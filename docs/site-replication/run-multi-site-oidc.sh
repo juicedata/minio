@@ -14,7 +14,7 @@ cleanup() {
 }
 
 cleanup
-
+set -x
 unset MINIO_KMS_KES_CERT_FILE
 unset MINIO_KMS_KES_KEY_FILE
 unset MINIO_KMS_KES_ENDPOINT
