@@ -666,24 +666,19 @@ func (n *JfsObjects) GetObjectInfo(ctx context.Context, bucket, object string, o
 		err = jfsToObjectErr(ctx, eno, bucket, object)
 		return
 	}
-	// put /dir1/key1; head /dir1 return 404; head /dir1/ return 200
-	if strings.HasSuffix(object, sep) && !fi.IsDir() || !strings.HasSuffix(object, sep) && fi.IsDir() {
+	if strings.HasSuffix(object, sep) && !fi.IsDir() {
 		err = jfsToObjectErr(ctx, syscall.ENOENT, bucket, object)
 		return
 	}
 	var etag []byte
-	if n.gConf.KeepEtag && !fi.IsDir() {
+	if n.gConf.KeepEtag {
 		etag, _ = n.fs.GetXattr(mctx, n.path(bucket, object), s3Etag)
-	}
-	size := fi.Size()
-	if fi.IsDir() {
-		size = 0
 	}
 	return minio.ObjectInfo{
 		Bucket:  bucket,
 		Name:    object,
 		ModTime: fi.ModTime(),
-		Size:    size,
+		Size:    fi.Size(),
 		IsDir:   fi.IsDir(),
 		AccTime: fi.ModTime(),
 		ETag:    string(etag),
