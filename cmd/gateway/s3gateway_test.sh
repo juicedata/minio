@@ -17,6 +17,7 @@
 # environment
 
 os="linux"
+errno=254
 if [[ `uname  -a` =~ "Darwin" ]];then
     os="mac"
 fi
@@ -1185,7 +1186,7 @@ function test_list_objects_error() {
         test_function=${function}
         out=$($function 2>&1)
         rv=$?
-        if [ $rv -ne 255 ]; then
+        if [ $rv -ne $errno ]; then
             rv=1
         else
             rv=0
@@ -1198,7 +1199,7 @@ function test_list_objects_error() {
         test_function=${function}
         out=$($function 2>&1)
         rv=$?
-        if [ $rv -ne 255 ]; then
+        if [ $rv -ne $errno ]; then
             rv=1
         else
             rv=0
@@ -1246,7 +1247,7 @@ function test_put_object_error() {
         test_function=${function}
         out=$($function 2>&1)
         rv=$?
-        if [ $rv -ne 255 ]; then
+        if [ $rv -ne $errno ]; then
             rv=1
         else
             rv=0
@@ -1259,7 +1260,7 @@ function test_put_object_error() {
         test_function=${function}
         out=$($function 2>&1)
         rv=$?
-        if [ $rv -ne 255 ]; then
+        if [ $rv -ne $errno ]; then
             rv=1
         else
             rv=0
@@ -1503,7 +1504,7 @@ function test_serverside_encryption_multipart_copy() {
         test_function=${function}
         out=$($function)
         rv=$?
-        if [ $rv -ne 255 ]; then
+        if [ $rv -ne $errno ]; then
             rv=1
         else
             rv=0
@@ -1587,7 +1588,7 @@ function test_serverside_encryption_error() {
         rv=$?
     fi
 
-    if [ $rv -ne 255 ]; then
+    if [ $rv -ne $errno ]; then
         rv=1
     else
         rv=0
@@ -1600,7 +1601,7 @@ function test_serverside_encryption_error() {
         rv=$?
     fi
 
-    if [ $rv -ne 255 ]; then
+    if [ $rv -ne $errno ]; then
         rv=1
     else
         rv=0
@@ -1621,7 +1622,7 @@ function test_serverside_encryption_error() {
         out=$($function 2>&1)
         rv=$?
     fi
-    if [ $rv -ne 255 ]; then
+    if [ $rv -ne $errno ]; then
         rv=1
     else
         rv=0
@@ -1668,7 +1669,7 @@ function test_get_object_error(){
         # save the ref to function being tested, so it can be logged
         test_function=${function}
         out=$($function 2>&1)
-        if [ $? -eq 255 ];then
+        if [ $? -eq $errno ];then
             rv=0
         fi
         if ! [[ "$out" =~ "The specified key does not exist" ]];then
@@ -1682,7 +1683,7 @@ function test_get_object_error(){
         # save the ref to function being tested, so it can be logged
         test_function=${function}
         out=$($function 2>&1)
-        if [ $? -eq 255 ];then
+        if [ $? -eq $errno ];then
             rv=0
         fi
         if [[ "$out" =~ "The specified key does not exist" ]];then
