@@ -1102,8 +1102,6 @@ github.com/hashicorp/vault/sdk v0.2.1/go.mod h1:WfUiO1vYzfBkz1TmoE4ZGU7HD0T0Cl/r
 github.com/hashicorp/yamux v0.0.0-20180604194846-3520598351bb/go.mod h1:+NfK9FKeTrX5uv1uIXGdwYDTeHna2qgaIlx54MXqjAM=
 github.com/hashicorp/yamux v0.0.0-20181012175058-2f1d1f20f75d/go.mod h1:+NfK9FKeTrX5uv1uIXGdwYDTeHna2qgaIlx54MXqjAM=
 github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpOxQnU=
-github.com/huaweicloud/huaweicloud-sdk-go-obs v3.21.12+incompatible h1:tANYIteuFrosKbRYUk1Yo/OGJjbt4x3OVg211Qc60M0=
-github.com/huaweicloud/huaweicloud-sdk-go-obs v3.21.12+incompatible/go.mod h1:l7VUhRbTKCzdOacdT4oWCwATKyvZqUOlOqr0Ous3k4s=
 github.com/hudl/fargo v1.3.0/go.mod h1:y3CKSmjA+wD2gak7sUSXTAoopbhU08POFhmITJgmKTg=
 github.com/hungys/go-lz4 v0.0.0-20170805124057-19ff7f07f099 h1:heHZCso/ytvpYr+hp2cDxlZfA/jTw46aHSvT9kZnJ7o=
 github.com/hungys/go-lz4 v0.0.0-20170805124057-19ff7f07f099/go.mod h1:h44tqw4M3GN0Woo9KBStxJxm8huNi+9+tOHoeqSvhaY=
@@ -1175,6 +1173,8 @@ github.com/jtolds/gls v4.20.0+incompatible/go.mod h1:QJZ7F/aHp+rZTRtaJ1ow/lLfFfV
 github.com/juicedata/duration v0.0.0-20220916024255-e5d060e609c4 h1:Xm0j+LxviqTSiQwRl4Fc8TGnonRc8AgvEbK0/qe8Mvw=
 github.com/juicedata/duration v0.0.0-20220916024255-e5d060e609c4/go.mod h1:5mO5juB1KX6ToGpgMxdE2sYWMg2vCp8FQKgkeHEG/Ec=
 github.com/juicedata/godaemon v0.0.0-20210629045518-3da5144a127d/go.mod h1:dlxKkLh3qAIPtgr2U/RVzsZJDuXA1ffg+Njikfmhvgw=
+github.com/juicedata/huaweicloud-sdk-go-obs v3.22.12-0.20230228031208-386e87b5c091+incompatible h1:2/ttSmYoX+QMegpNyAJR0Y6aHcVk57F7RJit5xN2T/s=
+github.com/juicedata/huaweicloud-sdk-go-obs v3.22.12-0.20230228031208-386e87b5c091+incompatible/go.mod h1:Ukwa8ffRQLV6QRwpqGioPjn2Wnf7TBDA4DbennDOqHE=
 github.com/juicedata/juicefs v1.0.4 h1:orm7+WPIrkDvObXXfG1UuZ3jmhzpjVE3qCfIirJwKCM=
 github.com/juicedata/juicefs v1.0.4/go.mod h1:TYYyJhKMPuQC+OWtfW9up+7NxF5ABWZ7EU6zrYn77sc=
 github.com/juicedata/mpb/v7 v7.0.4-0.20220719014258-68df1356cfba h1:YSCPvyONPDp/ivKgRanFpNEHh3N5/0UsKmwbbKQIuGE=
