@@ -37,5 +37,5 @@ jobs:
           make s3-gateway-test
 
       - name: Setup upterm session
-        if: ${{ failure() }}
+        if: ${{ failure() && github.event_name == 'workflow_dispatch' && github.event.inputs.debug == 'true' }}
         uses: lhotari/action-upterm@v1
