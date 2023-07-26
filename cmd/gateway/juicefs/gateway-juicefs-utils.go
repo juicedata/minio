@@ -20,8 +20,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"github.com/juicedata/juicefs/pkg/fs"
-	"go.uber.org/automaxprocs/maxprocs"
+	"github.com/juicedata/juicefs/pkg/fs" //nolint:gofumpt
 	"net"
 	"net/http"
 	"net/url"
@@ -31,8 +30,9 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
-	"time"
+	"time" //nolint:gofumpt
 
 	"github.com/erikdubbelboer/gspt"
 	"github.com/juicedata/juicefs/pkg/chunk"
@@ -51,26 +51,29 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+var debugAgent string
+var debugAgentOnce sync.Once
+
 func getMetaConf(c *cli.Context, mp string, readOnly bool) *meta.Config {
-	cfg := &meta.Config{
-		Retries:    c.Int("io-retries"),
-		Strict:     true,
-		ReadOnly:   readOnly,
-		NoBGJob:    c.Bool("no-bgjob"),
-		OpenCache:  time.Duration(c.Float64("open-cache") * 1e9),
-		Heartbeat:  duration(c.String("heartbeat")),
-		MountPoint: mp,
-		Subdir:     c.String("subdir"),
+	conf := meta.DefaultConf()
+	conf.Retries = c.Int("io-retries")
+	conf.MaxDeletes = c.Int("max-deletes")
+	conf.SkipDirNlink = c.Int("skip-dir-nlink")
+	conf.ReadOnly = readOnly
+	conf.NoBGJob = c.Bool("no-bgjob")
+	conf.OpenCache = time.Duration(c.Float64("open-cache") * 1e9)
+	conf.OpenCacheLimit = c.Uint64("open-cache-limit")
+	conf.Heartbeat = duration(c.String("heartbeat"))
+	conf.MountPoint = mp
+	conf.Subdir = c.String("subdir")
+
+	atimeMode := c.String("atime-mode")
+	if atimeMode != meta.RelAtime && atimeMode != meta.StrictAtime && atimeMode != meta.NoAtime {
+		logger.Warnf("unknown atime-mode \"%s\", changed to %s", atimeMode, meta.NoAtime)
+		atimeMode = meta.NoAtime
 	}
-	if cfg.Heartbeat < time.Second {
-		logger.Warnf("heartbeat should not be less than 1 second")
-		cfg.Heartbeat = time.Second
-	}
-	if cfg.Heartbeat > time.Minute*10 {
-		logger.Warnf("heartbeat shouldd not be greater than 10 minutes")
-		cfg.Heartbeat = time.Minute * 10
-	}
-	return cfg
+	conf.AtimeMode = atimeMode
+	return conf
 }
 
 func duration(s string) time.Duration {
@@ -149,6 +152,7 @@ func exposeMetrics(c *cli.Context, m meta.Meta, registerer prometheus.Registerer
 	logger.Infof("Prometheus metrics listening on %s", metricsAddr)
 	return metricsAddr
 }
+
 func initBackgroundTasks(c *cli.Context, vfsConf *vfs.Config, metaConf *meta.Config, m meta.Meta, blob object.ObjectStorage, registerer prometheus.Registerer, registry *prometheus.Registry) {
 	metricsAddr := exposeMetrics(c, m, registerer, registry)
 	vfsConf.Port.PrometheusAgent = metricsAddr
@@ -178,7 +182,6 @@ func getChunkConf(c *cli.Context, format *meta.Format) *chunk.Config {
 		GetTimeout:    time.Second * time.Duration(c.Int("get-timeout")),
 		PutTimeout:    time.Second * time.Duration(c.Int("put-timeout")),
 		MaxUpload:     c.Int("max-uploads"),
-		MaxDeletes:    c.Int("max-deletes"),
 		MaxRetries:    c.Int("io-retries"),
 		Writeback:     c.Bool("writeback"),
 		Prefetch:      c.Int("prefetch"),
@@ -193,8 +196,15 @@ func getChunkConf(c *cli.Context, format *meta.Format) *chunk.Config {
 		CacheMode:         os.FileMode(cm),
 		CacheFullBlock:    !c.Bool("cache-partial-only"),
 		CacheChecksum:     c.String("verify-cache-checksum"),
+		CacheEviction:     c.String("cache-eviction"),
 		CacheScanInterval: duration(c.String("cache-scan-interval")),
 		AutoCreate:        true,
+	}
+	if chunkConf.UploadLimit == 0 {
+		chunkConf.UploadLimit = format.UploadLimit * 1e6 / 8
+	}
+	if chunkConf.DownloadLimit == 0 {
+		chunkConf.DownloadLimit = format.DownloadLimit * 1e6 / 8
 	}
 	chunkConf.SelfCheck(format.UUID)
 	return chunkConf
@@ -235,7 +245,11 @@ func createStorage(format meta.Format) (object.ObjectStorage, error) {
 		return nil, err
 	}
 	blob = object.WithPrefix(blob, format.Name+"/")
-
+	if format.StorageClass != "" {
+		if os, ok := blob.(object.SupportStorageClass); ok {
+			os.SetStorageClass(format.StorageClass)
+		}
+	}
 	if format.EncryptKey != "" {
 		passphrase := os.Getenv("JFS_RSA_PASSPHRASE")
 		if passphrase == "" {
@@ -276,8 +290,8 @@ func NewReloadableStorage(format *meta.Format, cli meta.Meta, patch func(*meta.F
 			patch(new)
 		}
 		old := &holder.fmt
-		if new.Storage != old.Storage || new.Bucket != old.Bucket || new.AccessKey != old.AccessKey || new.SecretKey != old.SecretKey || new.SessionToken != old.SessionToken {
-			logger.Infof("found new configuration: storage=%s bucket=%s ak=%s", new.Storage, new.Bucket, new.AccessKey)
+		if new.Storage != old.Storage || new.Bucket != old.Bucket || new.AccessKey != old.AccessKey || new.SecretKey != old.SecretKey || new.SessionToken != old.SessionToken || new.StorageClass != old.StorageClass {
+			logger.Infof("found new configuration: storage=%s bucket=%s ak=%s storageClass=%s", new.Storage, new.Bucket, new.AccessKey, new.StorageClass)
 
 			newBlob, err := createStorage(*new)
 			if err != nil {
@@ -298,6 +312,15 @@ func updateFormat(c *cli.Context) func(*meta.Format) {
 		}
 		if c.IsSet("storage") {
 			format.Storage = c.String("storage")
+		}
+		if c.IsSet("storage-class") {
+			format.StorageClass = c.String("storage-class")
+		}
+		if c.IsSet("upload-limit") {
+			format.UploadLimit = c.Int64("upload-limit")
+		}
+		if c.IsSet("download-limit") {
+			format.DownloadLimit = c.Int64("download-limit")
 		}
 	}
 }
@@ -325,10 +348,15 @@ func initForSvc(c *cli.Context, mp string, metaUrl string) (*vfs.Config, *fs.Fil
 	store := chunk.NewCachedStore(blob, *chunkConf, registerer)
 	registerMetaMsg(metaCli, store, chunkConf)
 
-	err = metaCli.NewSession()
+	err = metaCli.NewSession(true)
 	if err != nil {
 		logger.Fatalf("new session: %s", err)
 	}
+	metaCli.OnReload(func(fmt *meta.Format) {
+		updateFormat(c)(fmt)
+		store.UpdateLimit(fmt.UploadLimit, fmt.DownloadLimit)
+	})
+
 	// Go will catch all the signals
 	signal.Ignore(syscall.SIGPIPE)
 	signalChan := make(chan os.Signal, 1)
@@ -359,18 +387,21 @@ func initForSvc(c *cli.Context, mp string, metaUrl string) (*vfs.Config, *fs.Fil
 
 func getVfsConf(c *cli.Context, metaConf *meta.Config, format *meta.Format, chunkConf *chunk.Config) *vfs.Config {
 	cfg := &vfs.Config{
-		Meta:       metaConf,
-		Format:     format,
-		Version:    version.Version(),
-		Chunk:      chunkConf,
-		BackupMeta: duration(c.String("backup-meta")),
-		Port:       &vfs.Port{DebugAgent: debugAgent, PyroscopeAddr: c.String("pyroscope")},
+		Meta:           metaConf,
+		Format:         *format,
+		Version:        version.Version(),
+		Chunk:          chunkConf,
+		BackupMeta:     duration(c.String("backup-meta")),
+		Port:           &vfs.Port{DebugAgent: debugAgent, PyroscopeAddr: c.String("pyroscope")},
+		PrefixInternal: c.Bool("prefix-internal"),
 	}
-	if cfg.BackupMeta > 0 && cfg.BackupMeta < time.Minute*5 {
+	skip_check := os.Getenv("SKIP_BACKUP_META_CHECK") == "true"
+	if !skip_check && cfg.BackupMeta > 0 && cfg.BackupMeta < time.Minute*5 {
 		logger.Fatalf("backup-meta should not be less than 5 minutes: %s", cfg.BackupMeta)
 	}
 	return cfg
 }
+
 func registerMetaMsg(m meta.Meta, store chunk.ChunkStore, chunkConf *chunk.Config) {
 	m.OnMsg(meta.DeleteSlice, func(args ...interface{}) error {
 		return store.Remove(args[0].(uint64), int(args[1].(uint32)))
@@ -381,24 +412,19 @@ func registerMetaMsg(m meta.Meta, store chunk.ChunkStore, chunkConf *chunk.Confi
 }
 
 func removePassword(uri string) {
-	var uri2 string
-	if strings.Contains(uri, "://") {
-		uri2 = utils.RemovePassword(uri)
-	} else {
-		uri2 = utils.RemovePassword("redis://" + uri)
-	}
+	args := make([]string, len(os.Args))
+	copy(args, os.Args)
+	uri2 := utils.RemovePassword(uri)
 	if uri2 != uri {
 		for i, a := range os.Args {
 			if a == uri {
-				os.Args[i] = uri2
+				args[i] = uri2
 				break
 			}
 		}
 	}
-	gspt.SetProcTitle(strings.Join(os.Args, " "))
+	gspt.SetProcTitle(strings.Join(args, " "))
 }
-
-var debugAgent string
 
 func setup(c *cli.Context, n int) {
 	if c.NArg() < n {
@@ -419,18 +445,14 @@ func setup(c *cli.Context, n int) {
 	if c.Bool("no-color") {
 		utils.DisableLogColor()
 	}
-	// set the correct value when it runs inside container
-	if undo, err := maxprocs.Set(maxprocs.Logger(logger.Debugf)); err != nil {
-		undo()
-	}
 
 	if !c.Bool("no-agent") {
-		go func() {
+		go debugAgentOnce.Do(func() {
 			for port := 6060; port < 6100; port++ {
 				debugAgent = fmt.Sprintf("127.0.0.1:%d", port)
 				_ = http.ListenAndServe(debugAgent, nil)
 			}
-		}()
+		})
 	}
 
 	if c.IsSet("pyroscope") {
@@ -469,6 +491,11 @@ func globalFlags() []cli.Flag {
 			Name:  "trace",
 			Usage: "enable trace log",
 		},
+		&cli.StringFlag{
+			Name:   "log-level",
+			Usage:  "set log level (trace, debug, info, warn, error, fatal, panic)",
+			Hidden: true,
+		},
 		&cli.BoolFlag{
 			Name:  "no-agent",
 			Usage: "disable pprof (:6060) agent",
@@ -484,7 +511,53 @@ func globalFlags() []cli.Flag {
 	}
 }
 
-func clientFlags() []cli.Flag {
+func clientFlags(defaultEntryCache float64) []cli.Flag {
+	return expandFlags(
+		metaFlags(),
+		metaCacheFlags(defaultEntryCache),
+		storageFlags(),
+		dataCacheFlags(),
+	)
+}
+
+func metaFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.StringFlag{
+			Name:  "subdir",
+			Usage: "mount a sub-directory as root",
+		},
+		&cli.StringFlag{
+			Name:  "backup-meta",
+			Value: "3600",
+			Usage: "interval (in seconds) to automatically backup metadata in the object storage (0 means disable backup)",
+		},
+		&cli.StringFlag{
+			Name:  "heartbeat",
+			Value: "12",
+			Usage: "interval (in seconds) to send heartbeat; it's recommended that all clients use the same heartbeat value",
+		},
+		&cli.BoolFlag{
+			Name:  "read-only",
+			Usage: "allow lookup/read operations only",
+		},
+		&cli.BoolFlag{
+			Name:  "no-bgjob",
+			Usage: "disable background jobs (clean-up, backup, etc.)",
+		},
+		&cli.StringFlag{
+			Name:  "atime-mode",
+			Value: "noatime",
+			Usage: "when to update atime, supported mode includes: noatime, relatime, strictatime",
+		},
+		&cli.IntFlag{
+			Name:  "skip-dir-nlink",
+			Value: 20,
+			Usage: "number of retries after which the update of directory nlink will be skipped (used for tkv only, 0 means never)",
+		},
+	}
+}
+
+func dataCacheFlags() []cli.Flag {
 	var defaultCacheDir = "/var/jfsCache"
 	switch runtime.GOOS {
 	case "linux":
@@ -503,55 +576,11 @@ func clientFlags() []cli.Flag {
 		defaultCacheDir = path.Join(homeDir, ".juicefs", "cache")
 	}
 	return []cli.Flag{
-		&cli.StringFlag{
-			Name:  "storage",
-			Usage: "customized storage type (e.g. s3, gcs, oss, cos) to access object store",
-		},
-		&cli.StringFlag{
-			Name:  "bucket",
-			Usage: "customized endpoint to access object store",
-		},
-		&cli.IntFlag{
-			Name:  "get-timeout",
-			Value: 60,
-			Usage: "the max number of seconds to download an object",
-		},
-		&cli.IntFlag{
-			Name:  "put-timeout",
-			Value: 60,
-			Usage: "the max number of seconds to upload an object",
-		},
-		&cli.IntFlag{
-			Name:  "io-retries",
-			Value: 10,
-			Usage: "number of retries after network failure",
-		},
-		&cli.IntFlag{
-			Name:  "max-uploads",
-			Value: 20,
-			Usage: "number of connections to upload",
-		},
-		&cli.IntFlag{
-			Name:  "max-deletes",
-			Value: 10,
-			Usage: "number of threads to delete objects",
-		},
 		&cli.IntFlag{
 			Name:  "buffer-size",
 			Value: 300,
 			Usage: "total read/write buffering in MB",
 		},
-		&cli.Int64Flag{
-			Name:  "upload-limit",
-			Value: 0,
-			Usage: "bandwidth limit for upload in Mbps",
-		},
-		&cli.Int64Flag{
-			Name:  "download-limit",
-			Value: 0,
-			Usage: "bandwidth limit for download in Mbps",
-		},
-
 		&cli.IntFlag{
 			Name:  "prefetch",
 			Value: 1,
@@ -596,36 +625,94 @@ func clientFlags() []cli.Flag {
 			Usage: "checksum level (none, full, shrink, extend)",
 		},
 		&cli.StringFlag{
+			Name:  "cache-eviction",
+			Value: "2-random",
+			Usage: "cache eviction policy (none or 2-random)",
+		},
+		&cli.StringFlag{
 			Name:  "cache-scan-interval",
 			Value: "3600",
 			Usage: "interval (in seconds) to scan cache-dir to rebuild in-memory index",
 		},
+	}
+}
+
+func storageFlags() []cli.Flag {
+	return []cli.Flag{
 		&cli.StringFlag{
-			Name:  "backup-meta",
-			Value: "3600",
-			Usage: "interval (in seconds) to automatically backup metadata in the object storage (0 means disable backup)",
+			Name:  "storage",
+			Usage: "customized storage type (e.g. s3, gcs, oss, cos) to access object store",
 		},
 		&cli.StringFlag{
-			Name:  "heartbeat",
-			Value: "12",
-			Usage: "interval (in seconds) to send heartbeat; it's recommended that all clients use the same heartbeat value",
+			Name:  "bucket",
+			Usage: "customized endpoint to access object store",
 		},
-		&cli.BoolFlag{
-			Name:  "read-only",
-			Usage: "allow lookup/read operations only",
+		&cli.StringFlag{
+			Name:  "storage-class",
+			Usage: "the storage class for data written by current client",
 		},
-		&cli.BoolFlag{
-			Name:  "no-bgjob",
-			Usage: "disable background jobs (clean-up, backup, etc.)",
+		&cli.IntFlag{
+			Name:  "get-timeout",
+			Value: 60,
+			Usage: "the max number of seconds to download an object",
+		},
+		&cli.IntFlag{
+			Name:  "put-timeout",
+			Value: 60,
+			Usage: "the max number of seconds to upload an object",
+		},
+		&cli.IntFlag{
+			Name:  "io-retries",
+			Value: 10,
+			Usage: "number of retries after network failure",
+		},
+		&cli.IntFlag{
+			Name:  "max-uploads",
+			Value: 20,
+			Usage: "number of connections to upload",
+		},
+		&cli.IntFlag{
+			Name:  "max-deletes",
+			Value: 10,
+			Usage: "number of threads to delete objects",
+		},
+		&cli.Int64Flag{
+			Name:  "upload-limit",
+			Usage: "bandwidth limit for upload in Mbps",
+		},
+		&cli.Int64Flag{
+			Name:  "download-limit",
+			Usage: "bandwidth limit for download in Mbps",
+		},
+	}
+}
+
+func metaCacheFlags(defaultEntryCache float64) []cli.Flag {
+	return []cli.Flag{
+		&cli.Float64Flag{
+			Name:  "attr-cache",
+			Value: 1.0,
+			Usage: "attributes cache timeout in seconds",
+		},
+		&cli.Float64Flag{
+			Name:  "entry-cache",
+			Value: defaultEntryCache,
+			Usage: "file entry cache timeout in seconds",
+		},
+		&cli.Float64Flag{
+			Name:  "dir-entry-cache",
+			Value: 1.0,
+			Usage: "dir entry cache timeout in seconds",
 		},
 		&cli.Float64Flag{
 			Name:  "open-cache",
 			Value: 0.0,
-			Usage: "open files cache timeout in seconds (0 means disable this feature)",
+			Usage: "The seconds to reuse open file without checking update (0 means disable this feature)",
 		},
-		&cli.StringFlag{
-			Name:  "subdir",
-			Usage: "mount a sub-directory as root",
+		&cli.IntFlag{
+			Name:  "open-cache-limit",
+			Value: 10000,
+			Usage: "max number of open files to cache (soft limit, 0 means unlimited)",
 		},
 	}
 }
@@ -649,27 +736,7 @@ func shareInfoFlags() []cli.Flag {
 	}
 }
 
-func cacheFlags(defaultEntryCache float64) []cli.Flag {
-	return []cli.Flag{
-		&cli.Float64Flag{
-			Name:  "attr-cache",
-			Value: 1.0,
-			Usage: "attributes cache timeout in seconds",
-		},
-		&cli.Float64Flag{
-			Name:  "entry-cache",
-			Value: defaultEntryCache,
-			Usage: "file entry cache timeout in seconds",
-		},
-		&cli.Float64Flag{
-			Name:  "dir-entry-cache",
-			Value: 1.0,
-			Usage: "dir entry cache timeout in seconds",
-		},
-	}
-}
-
-func expandFlags(compoundFlags [][]cli.Flag) []cli.Flag {
+func expandFlags(compoundFlags ...[]cli.Flag) []cli.Flag {
 	var flags []cli.Flag
 	for _, flag := range compoundFlags {
 		flags = append(flags, flag...)
