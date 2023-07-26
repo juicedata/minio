@@ -664,7 +664,7 @@ func cacheFlags(defaultEntryCache float64) []cli.Flag {
 		&cli.Float64Flag{
 			Name:  "dir-entry-cache",
 			Value: 1.0,
-			Usage: "dir entry cache timeout in seconds",
+			Usage: "dir entry cache timeout in seconds test",
 		},
 	}
 }
