@@ -24,7 +24,7 @@ function _build() {
     export GOOS=$os
     export GOARCH=$arch
     export GO111MODULE=on
-    CGO_ENABLED=1 go build -trimpath -tags kqueue -o /dev/null
+    go build -trimpath -tags kqueue -o /dev/null
 }
 
 function main() {
