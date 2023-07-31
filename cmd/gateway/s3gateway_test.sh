@@ -16,6 +16,8 @@
 
 # environment
 
+pip install awscli==1.27.153
+
 os="linux"
 if [[ `uname  -a` =~ "Darwin" ]];then
     os="mac"
@@ -480,7 +482,7 @@ function test_list_objects() {
         fi
     fi
 
-    # delete dir1/dir2/dir3/dir4/  listobject(prefix=dir1/) should return nothing
+    # delete dir1/dir2/dir3/dir4/  listobject(prefix=dir1/) should return nothing (awscli==1.27.153)
     if [ $rv -eq 0 ]; then
         function="${AWS} s3api delete-object --bucket ${bucket_name} --key dir1/dir2/dir3/dir4/"
         out=$($function 2>&1)
