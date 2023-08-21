@@ -18,8 +18,10 @@ package juicefs
 
 import (
 	"context"
-	"fmt"
-	"github.com/google/uuid"              //nolint:gofumpt
+	"encoding/binary"
+	"fmt"                    //nolint:gofumpt
+	"github.com/google/uuid" //nolint:gofumpt
+	jsoniter "github.com/json-iterator/go"
 	"github.com/juicedata/juicefs/pkg/fs" //nolint:gofumpt
 	"github.com/juicedata/juicefs/pkg/meta"
 	"github.com/juicedata/juicefs/pkg/utils"
@@ -27,7 +29,10 @@ import (
 	"github.com/minio/cli"
 	"github.com/minio/madmin-go"
 	minio "github.com/minio/minio/cmd"
-	"io"
+	"github.com/minio/minio/internal/bucket/versioning"
+	"github.com/minio/minio/internal/event"
+	"github.com/minio/pkg/bucket/policy"
+	"io" //nolint:gofumpt
 	"net/http"
 	"os"
 	"path"
@@ -258,6 +263,10 @@ func (n *JfsObjects) upath(bucket, uploadID string) string {
 
 func (n *JfsObjects) ppath(bucket, uploadID, part string) string {
 	return n.tpath(bucket, "uploads", uploadID, part)
+}
+
+func (n *JfsObjects) mpath(bucket string) string {
+	return n.tpath(bucket, "meta")
 }
 
 func (n *JfsObjects) DeleteBucket(ctx context.Context, bucket string, opts minio.DeleteBucketOptions) error {
@@ -1092,4 +1101,190 @@ func (n *JfsObjects) cleanup() {
 			}
 		}
 	}
+}
+
+func (n *JfsObjects) loadBucketMetadata(bucket string) (*minio.BucketMetadata, error) {
+	mpath := n.mpath(bucket)
+	_ = n.mkdirAll(mctx, path.Dir(mpath))
+	var f *fs.File
+	var errno syscall.Errno
+	f, errno = n.fs.Open(mctx, mpath, 0)
+	if errno == syscall.ENOENT {
+		f, errno = n.fs.Create(mctx, mpath, 0666, n.gConf.Umask) //nolint:gofumpt
+	}
+	if errno != 0 {
+		return nil, errno
+	}
+	defer f.Close(mctx)
+	data, err := io.ReadAll(&fReader{f})
+	if err != nil {
+		return nil, err
+	}
+	var b = &minio.BucketMetadata{}
+	if len(data) == 0 {
+		b = &minio.BucketMetadata{
+			Name:    bucket,
+			Created: minio.UTCNow(),
+			NotificationConfig: &event.Config{
+				XMLNS: "http://s3.amazonaws.com/doc/2006-03-01/",
+			},
+			QuotaConfig: &madmin.BucketQuota{},
+			VersioningConfig: &versioning.Versioning{
+				XMLNS: "http://s3.amazonaws.com/doc/2006-03-01/",
+			},
+			BucketTargetConfig:     &madmin.BucketTargets{},
+			BucketTargetConfigMeta: make(map[string]string),
+		}
+		if err := n.saveBucketPolicy(context.Background(), b); err != nil {
+			return nil, err
+		}
+		data, err = io.ReadAll(&fReader{f})
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(data) <= 4 {
+		return nil, fmt.Errorf("loadBucketMetadata: no data")
+	}
+
+	// Read header
+	switch binary.LittleEndian.Uint16(data[0:2]) {
+	case minio.BucketMetadataFormat:
+	default:
+		return nil, fmt.Errorf("loadBucketMetadata: unknown format: %d", binary.LittleEndian.Uint16(data[0:2]))
+	}
+	switch binary.LittleEndian.Uint16(data[2:4]) {
+	case minio.BucketMetadataVersion:
+	default:
+		return nil, fmt.Errorf("loadBucketMetadata: unknown version: %d", binary.LittleEndian.Uint16(data[2:4]))
+	}
+
+	if _, err := b.UnmarshalMsg(data[4:]); err != nil {
+		return nil, err
+	}
+	b.Name = bucket // in-case parsing failed for some reason, make sure bucket name is not empty.
+	err = b.ParseAllConfigs(context.Background(), nil)
+	return b, err
+}
+
+func (n *JfsObjects) saveBucketPolicy(ctx context.Context, meta *minio.BucketMetadata) error {
+	if err := meta.ParseAllConfigs(ctx, nil); err != nil {
+		return err
+	}
+
+	data := make([]byte, 4, meta.Msgsize()+4)
+
+	// Initialize the header.
+	binary.LittleEndian.PutUint16(data[0:2], minio.BucketMetadataFormat)
+	binary.LittleEndian.PutUint16(data[2:4], minio.BucketMetadataVersion)
+
+	// Marshal the bucket metadata
+	data2, err := meta.MarshalMsg(data)
+	if err != nil {
+		return err
+	}
+
+	tmpname := n.tpath(meta.Name, "tmp", minio.MustGetUUID())
+	_ = n.mkdirAll(ctx, path.Dir(tmpname))
+	f, eno := n.fs.Create(mctx, tmpname, 0666, n.gConf.Umask) //nolint:gofumpt
+	if eno != 0 {
+		logger.Errorf("create %s: %s", tmpname, eno)
+		return eno
+	}
+	defer func() { _ = n.fs.Delete(mctx, tmpname) }()
+
+	l, eno := f.Write(mctx, data2)
+	if eno != 0 || l != len(data2) {
+		return eno
+	}
+	configFile := n.mpath(meta.Name)
+	dir := path.Dir(configFile)
+	if dir != "" {
+		_ = n.mkdirAll(ctx, dir)
+	}
+	if eno := n.fs.Rename(mctx, tmpname, configFile, 0); eno != 0 {
+		err = jfsToObjectErr(ctx, eno, meta.Name, configFile)
+		return err
+	}
+	policyCache.put(meta.Name, meta.PolicyConfig)
+	return nil
+}
+
+func (n *JfsObjects) GetBucketPolicy(_ context.Context, bucket string) (*policy.Policy, error) {
+	policyConfig := policyCache.Get(bucket)
+	if policyConfig == nil {
+		bucketMetadata, err := n.loadBucketMetadata(bucket)
+		if err != nil || bucketMetadata.PolicyConfig == nil {
+			return nil, minio.BucketPolicyNotFound{Bucket: bucket}
+		}
+		policyConfig = bucketMetadata.PolicyConfig
+		policyCache.put(bucket, policyConfig)
+	}
+	return policyConfig, nil
+}
+
+// SetBucketPolicy - sets bucket policy
+func (n *JfsObjects) SetBucketPolicy(ctx context.Context, bucket string, p *policy.Policy) error {
+	bucketMetadata, err := n.loadBucketMetadata(bucket)
+	if err != nil {
+		return err
+	}
+
+	json := jsoniter.ConfigCompatibleWithStandardLibrary
+	configData, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	bucketMetadata.PolicyConfigJSON = configData
+	return n.saveBucketPolicy(ctx, bucketMetadata)
+}
+
+// DeleteBucketPolicy - deletes bucket policy
+func (n *JfsObjects) DeleteBucketPolicy(ctx context.Context, bucket string) error {
+	defer delete(policyCache.cache, bucket)
+	return n.fs.Delete(mctx, n.mpath(bucket))
+}
+
+func init() {
+	policyCache = bucketPolicyCache{cache: make(map[string]policyItem)}
+	go policyCache.clean()
+}
+
+var policyCache bucketPolicyCache
+
+type policyItem struct {
+	policy *policy.Policy
+	time   time.Time
+}
+type bucketPolicyCache struct {
+	sync.Mutex
+	cache map[string]policyItem
+}
+
+func (*bucketPolicyCache) clean() {
+	for range time.Tick(10 * time.Second) {
+		policyCache.Lock()
+		for k, v := range policyCache.cache {
+			if time.Since(v.time) > 10*time.Second {
+				delete(policyCache.cache, k)
+			}
+		}
+		policyCache.Unlock()
+	}
+}
+
+func (*bucketPolicyCache) put(bucket string, policy *policy.Policy) {
+	policyCache.Lock()
+	defer policyCache.Unlock()
+	policyCache.cache[bucket] = policyItem{policy: policy, time: time.Now()}
+}
+
+func (*bucketPolicyCache) Get(bucket string) *policy.Policy {
+	policyCache.Lock()
+	defer policyCache.Unlock()
+	var p *policy.Policy
+	if p = policyCache.cache[bucket].policy; p == nil {
+		delete(policyCache.cache, bucket)
+	}
+	return p
 }

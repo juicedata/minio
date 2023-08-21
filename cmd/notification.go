@@ -660,7 +660,7 @@ func (sys *NotificationSys) LoadTransitionTierConfig(ctx context.Context) {
 
 // Loads notification policies for all buckets into NotificationSys.
 func (sys *NotificationSys) set(bucket BucketInfo, meta BucketMetadata) {
-	config := meta.notificationConfig
+	config := meta.NotificationConfig
 	if config == nil {
 		return
 	}

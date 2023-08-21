@@ -615,12 +615,12 @@ func (s *peerRESTServer) LoadBucketMetadataHandler(w http.ResponseWriter, r *htt
 
 	globalBucketMetadataSys.Set(bucketName, meta)
 
-	if meta.notificationConfig != nil {
-		globalNotificationSys.AddRulesMap(bucketName, meta.notificationConfig.ToRulesMap())
+	if meta.NotificationConfig != nil {
+		globalNotificationSys.AddRulesMap(bucketName, meta.NotificationConfig.ToRulesMap())
 	}
 
-	if meta.bucketTargetConfig != nil {
-		globalBucketTargetSys.UpdateAllTargets(bucketName, meta.bucketTargetConfig)
+	if meta.BucketTargetConfig != nil {
+		globalBucketTargetSys.UpdateAllTargets(bucketName, meta.BucketTargetConfig)
 	}
 }
 

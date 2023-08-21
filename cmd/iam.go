@@ -252,16 +252,16 @@ func (sys *IAMSys) Init(ctx context.Context, objAPI ObjectLayer, etcdClient *etc
 		}
 
 		// Migrate IAM configuration, if necessary.
-		if err := sys.doIAMConfigMigration(retryCtx); err != nil {
-			txnLk.Unlock(lkctx.Cancel)
-			if configRetriableErrors(err) {
-				logger.Info("Waiting for all MinIO IAM sub-system to be initialized.. possible cause (%v)", err)
-				continue
-			}
-			logger.LogIf(ctx, fmt.Errorf("Unable to migrate IAM users and policies to new format: %w", err))
-			logger.LogIf(ctx, errors.New("IAM sub-system is partially initialized, some users may not be available"))
-			return
-		}
+		//if err := sys.doIAMConfigMigration(retryCtx); err != nil {
+		//	txnLk.Unlock(lkctx.Cancel)
+		//	if configRetriableErrors(err) {
+		//		logger.Info("Waiting for all MinIO IAM sub-system to be initialized.. possible cause (%v)", err)
+		//		continue
+		//	}
+		//	logger.LogIf(ctx, fmt.Errorf("Unable to migrate IAM users and policies to new format: %w", err))
+		//	logger.LogIf(ctx, errors.New("IAM sub-system is partially initialized, some users may not be available"))
+		//	return
+		//}
 
 		// Successfully migrated, proceed to load the users.
 		txnLk.Unlock(lkctx.Cancel)
@@ -269,19 +269,19 @@ func (sys *IAMSys) Init(ctx context.Context, objAPI ObjectLayer, etcdClient *etc
 	}
 
 	// Load IAM data from storage.
-	for {
-		if err := sys.Load(retryCtx); err != nil {
-			if configRetriableErrors(err) {
-				logger.Info("Waiting for all MinIO IAM sub-system to be initialized.. possible cause (%v)", err)
-				time.Sleep(time.Duration(r.Float64() * float64(5*time.Second)))
-				continue
-			}
-			if err != nil {
-				logger.LogIf(ctx, fmt.Errorf("Unable to initialize IAM sub-system, some users may not be available %w", err))
-			}
-		}
-		break
-	}
+	//for {
+	//	if err := sys.Load(retryCtx); err != nil {
+	//		if configRetriableErrors(err) {
+	//			logger.Info("Waiting for all MinIO IAM sub-system to be initialized.. possible cause (%v)", err)
+	//			time.Sleep(time.Duration(r.Float64() * float64(5*time.Second)))
+	//			continue
+	//		}
+	//		if err != nil {
+	//			logger.LogIf(ctx, fmt.Errorf("Unable to initialize IAM sub-system, some users may not be available %w", err))
+	//		}
+	//	}
+	//	break
+	//}
 
 	// Set up polling for expired accounts and credentials purging.
 	switch {

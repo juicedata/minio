@@ -310,7 +310,7 @@ func (sys *BucketTargetSys) UpdateAllTargets(bucket string, tgts *madmin.BucketT
 
 // create minio-go clients for buckets having remote targets
 func (sys *BucketTargetSys) set(bucket BucketInfo, meta BucketMetadata) {
-	cfg := meta.bucketTargetConfig
+	cfg := meta.BucketTargetConfig
 	if cfg == nil || cfg.Empty() {
 		return
 	}

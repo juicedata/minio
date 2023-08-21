@@ -50,8 +50,8 @@ const (
 	legacyBucketObjectLockEnabledConfig     = `{"x-amz-bucket-object-lock-enabled":true}`
 
 	bucketMetadataFile    = ".metadata.bin"
-	bucketMetadataFormat  = 1
-	bucketMetadataVersion = 1
+	BucketMetadataFormat  = 1
+	BucketMetadataVersion = 1
 )
 
 var (
@@ -83,17 +83,17 @@ type BucketMetadata struct {
 	BucketTargetsConfigMetaJSON []byte
 
 	// Unexported fields. Must be updated atomically.
-	policyConfig           *policy.Policy
-	notificationConfig     *event.Config
+	PolicyConfig           *policy.Policy
+	NotificationConfig     *event.Config
 	lifecycleConfig        *lifecycle.Lifecycle
 	objectLockConfig       *objectlock.Config
-	versioningConfig       *versioning.Versioning
+	VersioningConfig       *versioning.Versioning
 	sseConfig              *bucketsse.BucketSSEConfig
 	taggingConfig          *tags.Tags
-	quotaConfig            *madmin.BucketQuota
+	QuotaConfig            *madmin.BucketQuota
 	replicationConfig      *replication.Config
-	bucketTargetConfig     *madmin.BucketTargets
-	bucketTargetConfigMeta map[string]string
+	BucketTargetConfig     *madmin.BucketTargets
+	BucketTargetConfigMeta map[string]string
 }
 
 // newBucketMetadata creates BucketMetadata with the supplied name and Created to Now.
@@ -101,15 +101,15 @@ func newBucketMetadata(name string) BucketMetadata {
 	return BucketMetadata{
 		Name:    name,
 		Created: UTCNow(),
-		notificationConfig: &event.Config{
+		NotificationConfig: &event.Config{
 			XMLNS: "http://s3.amazonaws.com/doc/2006-03-01/",
 		},
-		quotaConfig: &madmin.BucketQuota{},
-		versioningConfig: &versioning.Versioning{
+		QuotaConfig: &madmin.BucketQuota{},
+		VersioningConfig: &versioning.Versioning{
 			XMLNS: "http://s3.amazonaws.com/doc/2006-03-01/",
 		},
-		bucketTargetConfig:     &madmin.BucketTargets{},
-		bucketTargetConfigMeta: make(map[string]string),
+		BucketTargetConfig:     &madmin.BucketTargets{},
+		BucketTargetConfigMeta: make(map[string]string),
 	}
 }
 
@@ -130,12 +130,12 @@ func (b *BucketMetadata) Load(ctx context.Context, api ObjectLayer, name string)
 	}
 	// Read header
 	switch binary.LittleEndian.Uint16(data[0:2]) {
-	case bucketMetadataFormat:
+	case BucketMetadataFormat:
 	default:
 		return fmt.Errorf("loadBucketMetadata: unknown format: %d", binary.LittleEndian.Uint16(data[0:2]))
 	}
 	switch binary.LittleEndian.Uint16(data[2:4]) {
-	case bucketMetadataVersion:
+	case BucketMetadataVersion:
 	default:
 		return fmt.Errorf("loadBucketMetadata: unknown version: %d", binary.LittleEndian.Uint16(data[2:4]))
 	}
@@ -161,20 +161,20 @@ func loadBucketMetadata(ctx context.Context, objectAPI ObjectLayer, bucket strin
 	return b, b.migrateTargetConfig(ctx, objectAPI)
 }
 
-// parseAllConfigs will parse all configs and populate the private fields.
+// ParseAllConfigs will parse all configs and populate the private fields.
 // The first error encountered is returned.
-func (b *BucketMetadata) parseAllConfigs(ctx context.Context, objectAPI ObjectLayer) (err error) {
+func (b *BucketMetadata) ParseAllConfigs(ctx context.Context, objectAPI ObjectLayer) (err error) {
 	if len(b.PolicyConfigJSON) != 0 {
-		b.policyConfig, err = policy.ParseConfig(bytes.NewReader(b.PolicyConfigJSON), b.Name)
+		b.PolicyConfig, err = policy.ParseConfig(bytes.NewReader(b.PolicyConfigJSON), b.Name)
 		if err != nil {
 			return err
 		}
 	} else {
-		b.policyConfig = nil
+		b.PolicyConfig = nil
 	}
 
 	if len(b.NotificationConfigXML) != 0 {
-		if err = xml.Unmarshal(b.NotificationConfigXML, b.notificationConfig); err != nil {
+		if err = xml.Unmarshal(b.NotificationConfigXML, b.NotificationConfig); err != nil {
 			return err
 		}
 	}
@@ -220,14 +220,14 @@ func (b *BucketMetadata) parseAllConfigs(ctx context.Context, objectAPI ObjectLa
 	}
 
 	if len(b.VersioningConfigXML) != 0 {
-		b.versioningConfig, err = versioning.ParseConfig(bytes.NewReader(b.VersioningConfigXML))
+		b.VersioningConfig, err = versioning.ParseConfig(bytes.NewReader(b.VersioningConfigXML))
 		if err != nil {
 			return err
 		}
 	}
 
 	if len(b.QuotaConfigJSON) != 0 {
-		b.quotaConfig, err = parseBucketQuota(b.Name, b.QuotaConfigJSON)
+		b.QuotaConfig, err = parseBucketQuota(b.Name, b.QuotaConfigJSON)
 		if err != nil {
 			return err
 		}
@@ -243,12 +243,12 @@ func (b *BucketMetadata) parseAllConfigs(ctx context.Context, objectAPI ObjectLa
 	}
 
 	if len(b.BucketTargetsConfigJSON) != 0 {
-		b.bucketTargetConfig, err = parseBucketTargetConfig(b.Name, b.BucketTargetsConfigJSON, b.BucketTargetsConfigMetaJSON)
+		b.BucketTargetConfig, err = parseBucketTargetConfig(b.Name, b.BucketTargetsConfigJSON, b.BucketTargetsConfigMetaJSON)
 		if err != nil {
 			return err
 		}
 	} else {
-		b.bucketTargetConfig = &madmin.BucketTargets{}
+		b.BucketTargetConfig = &madmin.BucketTargets{}
 	}
 	return nil
 }
@@ -299,7 +299,7 @@ func (b *BucketMetadata) convertLegacyConfigs(ctx context.Context, objectAPI Obj
 
 	if len(configs) == 0 {
 		// nothing to update, return right away.
-		return b.parseAllConfigs(ctx, objectAPI)
+		return b.ParseAllConfigs(ctx, objectAPI)
 	}
 
 	for legacyFile, configData := range configs {
@@ -349,15 +349,15 @@ func (b *BucketMetadata) convertLegacyConfigs(ctx context.Context, objectAPI Obj
 
 // Save config to supplied ObjectLayer api.
 func (b *BucketMetadata) Save(ctx context.Context, api ObjectLayer) error {
-	if err := b.parseAllConfigs(ctx, api); err != nil {
+	if err := b.ParseAllConfigs(ctx, api); err != nil {
 		return err
 	}
 
 	data := make([]byte, 4, b.Msgsize()+4)
 
 	// Initialize the header.
-	binary.LittleEndian.PutUint16(data[0:2], bucketMetadataFormat)
-	binary.LittleEndian.PutUint16(data[2:4], bucketMetadataVersion)
+	binary.LittleEndian.PutUint16(data[0:2], BucketMetadataFormat)
+	binary.LittleEndian.PutUint16(data[2:4], BucketMetadataVersion)
 
 	// Marshal the bucket metadata
 	data, err := b.MarshalMsg(data)

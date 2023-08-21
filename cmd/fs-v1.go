@@ -464,10 +464,10 @@ func (fs *FSObjects) GetBucketPolicy(ctx context.Context, bucket string) (*polic
 	if err != nil {
 		return nil, BucketPolicyNotFound{Bucket: bucket}
 	}
-	if meta.policyConfig == nil {
+	if meta.PolicyConfig == nil {
 		return nil, BucketPolicyNotFound{Bucket: bucket}
 	}
-	return meta.policyConfig, nil
+	return meta.PolicyConfig, nil
 }
 
 // SetBucketPolicy - only needed for FS in NAS mode

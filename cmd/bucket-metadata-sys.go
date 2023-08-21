@@ -191,7 +191,7 @@ func (sys *BucketMetadataSys) GetVersioningConfig(bucket string) (*versioning.Ve
 	if err != nil {
 		return nil, err
 	}
-	return meta.versioningConfig, nil
+	return meta.VersioningConfig, nil
 }
 
 // GetTaggingConfig returns configured tagging config
@@ -271,14 +271,14 @@ func (sys *BucketMetadataSys) GetNotificationConfig(bucket string) (*event.Confi
 		if err != nil {
 			return nil, err
 		}
-		return meta.notificationConfig, nil
+		return meta.NotificationConfig, nil
 	}
 
 	meta, err := sys.GetConfig(GlobalContext, bucket)
 	if err != nil {
 		return nil, err
 	}
-	return meta.notificationConfig, nil
+	return meta.NotificationConfig, nil
 }
 
 // GetSSEConfig returns configured SSE config
@@ -315,10 +315,10 @@ func (sys *BucketMetadataSys) GetPolicyConfig(bucket string) (*policy.Policy, er
 		}
 		return nil, err
 	}
-	if meta.policyConfig == nil {
+	if meta.PolicyConfig == nil {
 		return nil, BucketPolicyNotFound{Bucket: bucket}
 	}
-	return meta.policyConfig, nil
+	return meta.PolicyConfig, nil
 }
 
 // GetQuotaConfig returns configured bucket quota
@@ -328,7 +328,7 @@ func (sys *BucketMetadataSys) GetQuotaConfig(ctx context.Context, bucket string)
 	if err != nil {
 		return nil, err
 	}
-	return meta.quotaConfig, nil
+	return meta.QuotaConfig, nil
 }
 
 // GetReplicationConfig returns configured bucket replication config
@@ -355,10 +355,10 @@ func (sys *BucketMetadataSys) GetBucketTargetsConfig(bucket string) (*madmin.Buc
 	if err != nil {
 		return nil, err
 	}
-	if meta.bucketTargetConfig == nil {
+	if meta.BucketTargetConfig == nil {
 		return nil, BucketRemoteTargetNotFound{Bucket: bucket}
 	}
-	return meta.bucketTargetConfig, nil
+	return meta.BucketTargetConfig, nil
 }
 
 // GetBucketTarget returns the target for the bucket and arn.
