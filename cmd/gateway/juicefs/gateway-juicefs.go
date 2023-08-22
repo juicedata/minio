@@ -17,6 +17,7 @@
 package juicefs
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"                    //nolint:gofumpt
@@ -28,6 +29,7 @@ import (
 	"github.com/juicedata/juicefs/pkg/version"
 	"github.com/minio/cli"
 	"github.com/minio/madmin-go"
+	"github.com/minio/minio-go/v7/pkg/tags"
 	minio "github.com/minio/minio/cmd"
 	"github.com/minio/minio/internal/bucket/versioning"
 	"github.com/minio/minio/internal/event"
@@ -100,6 +102,10 @@ For more information, please visit: https://juicefs.com/docs/community/s3_gatewa
 			Value: "022",
 			Usage: "umask for new files and directories in octal",
 		},
+		&cli.BoolFlag{
+			Name:  "object-tag",
+			Usage: "Enable the object tag api",
+		},
 	}
 
 	compoundFlags := [][]cli.Flag{
@@ -130,6 +136,7 @@ type Config struct {
 	MultiBucket bool
 	KeepEtag    bool
 	Umask       uint16
+	ObjTag      bool
 }
 
 type JfsObjects struct {
@@ -154,7 +161,7 @@ func (n *JfsObjects) NewGatewayLayer(creds madmin.Credentials) (minio.ObjectLaye
 		logger.Fatalf("invalid umask %s: %s", n.ctx.String("umask"), err)
 	}
 	mctx = meta.NewContext(uint32(os.Getpid()), uint32(os.Getuid()), []uint32{uint32(os.Getgid())})
-	jfsObj := &JfsObjects{fs: jfs, conf: conf, listPool: minio.NewTreeWalkPool(time.Minute * 30), gConf: &Config{MultiBucket: n.ctx.Bool("multi-buckets"), KeepEtag: n.ctx.Bool("keep-etag"), Umask: uint16(umask)}}
+	jfsObj := &JfsObjects{fs: jfs, conf: conf, listPool: minio.NewTreeWalkPool(time.Minute * 30), gConf: &Config{MultiBucket: n.ctx.Bool("multi-buckets"), KeepEtag: n.ctx.Bool("keep-etag"), Umask: uint16(umask), ObjTag: n.ctx.Bool("object-tag")}}
 	go jfsObj.cleanup()
 	return jfsObj, nil
 }
@@ -1287,4 +1294,89 @@ func (*bucketPolicyCache) Get(bucket string) *policy.Policy {
 		delete(policyCache.cache, bucket)
 	}
 	return p
+}
+
+func (n *JfsObjects) IsTaggingSupported() bool {
+	return true
+}
+
+func (n *JfsObjects) PutObjectTags(ctx context.Context, bucket, object string, tags string, opts minio.ObjectOptions) (minio.ObjectInfo, error) {
+	if !n.gConf.ObjTag {
+		return minio.ObjectInfo{}, minio.NotImplemented{}
+	}
+
+	if opts.VersionID != "" && opts.VersionID != minio.NullVersionID {
+		return minio.ObjectInfo{}, minio.VersionNotFound{
+			Bucket:    bucket,
+			Object:    object,
+			VersionID: opts.VersionID,
+		}
+	}
+
+	if _, err := n.DeleteObjectTags(ctx, bucket, object, opts); err != nil {
+		return minio.ObjectInfo{}, err
+	}
+	splits := strings.Split(tags, "=")
+	if eno := n.fs.SetXattr(mctx, n.path(bucket, object), splits[0], []byte(splits[1]), 0); eno != 0 {
+		return minio.ObjectInfo{}, eno
+	}
+	return n.GetObjectInfo(ctx, bucket, object, opts)
+}
+
+func (n *JfsObjects) GetObjectTags(ctx context.Context, bucket, object string, opts minio.ObjectOptions) (*tags.Tags, error) {
+	if !n.gConf.ObjTag {
+		return nil, minio.NotImplemented{}
+	}
+
+	if opts.VersionID != "" && opts.VersionID != minio.NullVersionID {
+		return nil, minio.VersionNotFound{
+			Bucket:    bucket,
+			Object:    object,
+			VersionID: opts.VersionID,
+		}
+	}
+
+	names, errno := n.fs.ListXattr(mctx, n.path(bucket, object))
+	if errno != 0 {
+		return nil, errno
+	}
+
+	// key1=value1&key2=value2
+	var tagString string
+	split := bytes.Split(bytes.TrimSuffix(names, []byte{0}), []byte{0})
+	for idx, key := range split {
+		value, errno := n.fs.GetXattr(mctx, n.path(bucket, object), string(key))
+		if errno != 0 {
+			return nil, errno
+		}
+		tagString += fmt.Sprintf("%s=%s", key, value)
+		if idx != len(split)-1 {
+			tagString += "&"
+		}
+	}
+	return tags.ParseObjectTags(tagString)
+}
+
+func (n *JfsObjects) DeleteObjectTags(ctx context.Context, bucket, object string, opts minio.ObjectOptions) (minio.ObjectInfo, error) {
+	if !n.gConf.ObjTag {
+		return minio.ObjectInfo{}, minio.NotImplemented{}
+	}
+	names, errno := n.fs.ListXattr(mctx, n.path(bucket, object))
+	if errno != 0 {
+		return minio.ObjectInfo{}, errno
+	}
+	if names == nil {
+		return minio.ObjectInfo{}, nil
+	}
+
+	split := bytes.Split(bytes.TrimSuffix(names, []byte{0}), []byte{0})
+	for _, key := range split {
+		if errno := n.fs.RemoveXattr(mctx, n.path(bucket, object), string(key)); errno != 0 {
+			if n.gConf.KeepEtag && string(key) == s3Etag && errno == syscall.ENOENT {
+				continue
+			}
+			return minio.ObjectInfo{}, errno
+		}
+	}
+	return minio.ObjectInfo{}, nil
 }

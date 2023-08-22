@@ -743,7 +743,7 @@ func equals(k1 string, keys ...string) bool {
 func getReplicationAction(oi1 ObjectInfo, oi2 minio.ObjectInfo, opType replication.Type) replicationAction {
 	// Avoid resyncing null versions created prior to enabling replication if target has a newer copy
 	if opType == replication.ExistingObjectReplicationType &&
-		oi1.ModTime.Unix() > oi2.LastModified.Unix() && oi1.VersionID == nullVersionID {
+		oi1.ModTime.Unix() > oi2.LastModified.Unix() && oi1.VersionID == NullVersionID {
 		return replicateNone
 	}
 	// needs full replication
@@ -1081,7 +1081,7 @@ func replicateObjectToTarget(ctx context.Context, ri ReplicateObjectInfo, object
 		rinfo.ReplicationStatus = replication.Completed
 		if rAction == replicateNone {
 			if ri.OpType == replication.ExistingObjectReplicationType &&
-				objInfo.ModTime.Unix() > oi.LastModified.Unix() && objInfo.VersionID == nullVersionID {
+				objInfo.ModTime.Unix() > oi.LastModified.Unix() && objInfo.VersionID == NullVersionID {
 				logger.LogIf(ctx, fmt.Errorf("Unable to replicate %s/%s (null). Newer version exists on target", bucket, object))
 				sendEvent(eventArgs{
 					EventName:  event.ObjectReplicationNotTracked,

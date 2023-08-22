@@ -48,7 +48,7 @@ import (
 )
 
 const (
-	nullVersionID = "null"
+	NullVersionID = "null"
 	// Really large streams threshold per shard.
 	reallyLargeFileThreshold = 64 * humanize.MiByte // Optimized for HDDs
 
@@ -892,7 +892,7 @@ func (s *xlStorage) deleteVersions(ctx context.Context, volume, path string, fis
 		if dataDir != "" {
 			versionID := fi.VersionID
 			if versionID == "" {
-				versionID = nullVersionID
+				versionID = NullVersionID
 			}
 			// PR #11758 used DataDir, preserve it
 			// for users who might have used master
@@ -1013,7 +1013,7 @@ func (s *xlStorage) DeleteVersion(ctx context.Context, volume, path string, fi F
 	if dataDir != "" {
 		versionID := fi.VersionID
 		if versionID == "" {
-			versionID = nullVersionID
+			versionID = NullVersionID
 		}
 		// PR #11758 used DataDir, preserve it
 		// for users who might have used master
@@ -1280,7 +1280,7 @@ func (s *xlStorage) ReadVersion(ctx context.Context, volume, path, versionID str
 				// If written with header we are fine.
 				return fi, nil
 			}
-			if fi.Size == 0 || !(fi.VersionID != "" && fi.VersionID != nullVersionID) {
+			if fi.Size == 0 || !(fi.VersionID != "" && fi.VersionID != NullVersionID) {
 				// If versioned we have no conflicts.
 				fi.SetInlineData()
 				return fi, nil
@@ -2210,9 +2210,9 @@ func (s *xlStorage) RenameData(ctx context.Context, srcVolume, srcPath string, f
 	var oldDstDataPath string
 	if fi.VersionID == "" {
 		// return the latest "null" versionId info
-		ofi, err := xlMeta.ToFileInfo(dstVolume, dstPath, nullVersionID)
+		ofi, err := xlMeta.ToFileInfo(dstVolume, dstPath, NullVersionID)
 		if err == nil && !ofi.Deleted {
-			if xlMeta.SharedDataDirCountStr(nullVersionID, ofi.DataDir) == 0 {
+			if xlMeta.SharedDataDirCountStr(NullVersionID, ofi.DataDir) == 0 {
 				// Purge the destination path as we are not preserving anything
 				// versioned object was not requested.
 				oldDstDataPath = pathJoin(dstVolumeDir, dstPath, ofi.DataDir)
@@ -2222,7 +2222,7 @@ func (s *xlStorage) RenameData(ctx context.Context, srcVolume, srcPath string, f
 				if oldDstDataPath == dstDataPath {
 					oldDstDataPath = ""
 				}
-				xlMeta.data.remove(nullVersionID, ofi.DataDir)
+				xlMeta.data.remove(NullVersionID, ofi.DataDir)
 			}
 		}
 		// Empty fi.VersionID indicates that versioning is either

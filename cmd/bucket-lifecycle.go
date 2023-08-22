@@ -578,7 +578,7 @@ func postRestoreOpts(ctx context.Context, r *http.Request, bucket, object string
 	versioned := globalBucketVersioningSys.Enabled(bucket)
 	versionSuspended := globalBucketVersioningSys.Suspended(bucket)
 	vid := strings.TrimSpace(r.Form.Get(xhttp.VersionID))
-	if vid != "" && vid != nullVersionID {
+	if vid != "" && vid != NullVersionID {
 		_, err := uuid.Parse(vid)
 		if err != nil {
 			logger.LogIf(ctx, err)

@@ -610,7 +610,7 @@ func (fs *FSObjects) DeleteBucket(ctx context.Context, bucket string, opts Delet
 // if source object and destination object are same we only
 // update metadata.
 func (fs *FSObjects) CopyObject(ctx context.Context, srcBucket, srcObject, dstBucket, dstObject string, srcInfo ObjectInfo, srcOpts, dstOpts ObjectOptions) (oi ObjectInfo, err error) {
-	if srcOpts.VersionID != "" && srcOpts.VersionID != nullVersionID {
+	if srcOpts.VersionID != "" && srcOpts.VersionID != NullVersionID {
 		return oi, VersionNotFound{
 			Bucket:    srcBucket,
 			Object:    srcObject,
@@ -693,7 +693,7 @@ func (fs *FSObjects) CopyObject(ctx context.Context, srcBucket, srcObject, dstBu
 // GetObjectNInfo - returns object info and a reader for object
 // content.
 func (fs *FSObjects) GetObjectNInfo(ctx context.Context, bucket, object string, rs *HTTPRangeSpec, h http.Header, lockType LockType, opts ObjectOptions) (gr *GetObjectReader, err error) {
-	if opts.VersionID != "" && opts.VersionID != nullVersionID {
+	if opts.VersionID != "" && opts.VersionID != NullVersionID {
 		return nil, VersionNotFound{
 			Bucket:    bucket,
 			Object:    object,
@@ -955,7 +955,7 @@ func (fs *FSObjects) getObjectInfoWithLock(ctx context.Context, bucket, object s
 
 // GetObjectInfo - reads object metadata and replies back ObjectInfo.
 func (fs *FSObjects) GetObjectInfo(ctx context.Context, bucket, object string, opts ObjectOptions) (oi ObjectInfo, e error) {
-	if opts.VersionID != "" && opts.VersionID != nullVersionID {
+	if opts.VersionID != "" && opts.VersionID != NullVersionID {
 		return oi, VersionNotFound{
 			Bucket:    bucket,
 			Object:    object,
@@ -1153,7 +1153,7 @@ func (fs *FSObjects) DeleteObjects(ctx context.Context, bucket string, objects [
 // DeleteObject - deletes an object from a bucket, this operation is destructive
 // and there are no rollbacks supported.
 func (fs *FSObjects) DeleteObject(ctx context.Context, bucket, object string, opts ObjectOptions) (objInfo ObjectInfo, err error) {
-	if opts.VersionID != "" && opts.VersionID != nullVersionID {
+	if opts.VersionID != "" && opts.VersionID != NullVersionID {
 		return objInfo, VersionNotFound{
 			Bucket:    bucket,
 			Object:    object,
@@ -1285,7 +1285,7 @@ func (fs *FSObjects) ListObjects(ctx context.Context, bucket, prefix, marker, de
 
 // GetObjectTags - get object tags from an existing object
 func (fs *FSObjects) GetObjectTags(ctx context.Context, bucket, object string, opts ObjectOptions) (*tags.Tags, error) {
-	if opts.VersionID != "" && opts.VersionID != nullVersionID {
+	if opts.VersionID != "" && opts.VersionID != NullVersionID {
 		return nil, VersionNotFound{
 			Bucket:    bucket,
 			Object:    object,
@@ -1302,7 +1302,7 @@ func (fs *FSObjects) GetObjectTags(ctx context.Context, bucket, object string, o
 
 // PutObjectTags - replace or add tags to an existing object
 func (fs *FSObjects) PutObjectTags(ctx context.Context, bucket, object string, tags string, opts ObjectOptions) (ObjectInfo, error) {
-	if opts.VersionID != "" && opts.VersionID != nullVersionID {
+	if opts.VersionID != "" && opts.VersionID != NullVersionID {
 		return ObjectInfo{}, VersionNotFound{
 			Bucket:    bucket,
 			Object:    object,

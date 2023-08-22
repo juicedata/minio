@@ -79,7 +79,7 @@ func (x *xlMetaV2) AddFreeVersion(fi FileInfo) error {
 	var uv uuid.UUID
 	var err error
 	switch fi.VersionID {
-	case "", nullVersionID:
+	case "", NullVersionID:
 	default:
 		uv, err = uuid.Parse(fi.VersionID)
 		if err != nil {

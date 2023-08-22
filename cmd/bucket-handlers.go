@@ -498,7 +498,7 @@ func (api objectAPIHandlers) DeleteMultipleObjectsHandler(w http.ResponseWriter,
 			}
 			continue
 		}
-		if object.VersionID != "" && object.VersionID != nullVersionID {
+		if object.VersionID != "" && object.VersionID != NullVersionID {
 			if _, err := uuid.Parse(object.VersionID); err != nil {
 				logger.LogIf(ctx, fmt.Errorf("invalid version-id specified %w", err))
 				apiErr := errorCodes.ToAPIErr(ErrNoSuchVersion)
@@ -520,7 +520,7 @@ func (api objectAPIHandlers) DeleteMultipleObjectsHandler(w http.ResponseWriter,
 
 		if replicateDeletes || object.VersionID != "" && hasLockEnabled || !globalTierConfigMgr.Empty() {
 			if !globalTierConfigMgr.Empty() && object.VersionID == "" && opts.VersionSuspended {
-				opts.VersionID = nullVersionID
+				opts.VersionID = NullVersionID
 			}
 			goi, gerr = getObjectInfoFn(ctx, bucket, object.ObjectName, opts)
 		}

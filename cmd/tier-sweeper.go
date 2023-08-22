@@ -79,7 +79,7 @@ func (os *objSweeper) GetOpts() ObjectOptions {
 		VersionSuspended: os.Suspended,
 	}
 	if os.Suspended && os.VersionID == "" {
-		opts.VersionID = nullVersionID
+		opts.VersionID = NullVersionID
 	}
 	return opts
 }

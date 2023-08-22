@@ -260,7 +260,7 @@ func (fs *FSObjects) NewMultipartUpload(ctx context.Context, bucket, object stri
 func (fs *FSObjects) CopyObjectPart(ctx context.Context, srcBucket, srcObject, dstBucket, dstObject, uploadID string, partID int,
 	startOffset int64, length int64, srcInfo ObjectInfo, srcOpts, dstOpts ObjectOptions) (pi PartInfo, e error,
 ) {
-	if srcOpts.VersionID != "" && srcOpts.VersionID != nullVersionID {
+	if srcOpts.VersionID != "" && srcOpts.VersionID != NullVersionID {
 		return pi, VersionNotFound{
 			Bucket:    srcBucket,
 			Object:    srcObject,
@@ -285,7 +285,7 @@ func (fs *FSObjects) CopyObjectPart(ctx context.Context, srcBucket, srcObject, d
 // written to '.minio.sys/tmp' location and safely renamed to
 // '.minio.sys/multipart' for reach parts.
 func (fs *FSObjects) PutObjectPart(ctx context.Context, bucket, object, uploadID string, partID int, r *PutObjReader, opts ObjectOptions) (pi PartInfo, e error) {
-	if opts.VersionID != "" && opts.VersionID != nullVersionID {
+	if opts.VersionID != "" && opts.VersionID != NullVersionID {
 		return pi, VersionNotFound{
 			Bucket:    bucket,
 			Object:    object,

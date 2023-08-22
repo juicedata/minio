@@ -69,7 +69,7 @@ var replicationConfigTests = []struct {
 	},
 	{ // 3. existing object replication config enabled, versioning suspended
 		name:         "existing object replication config enabled, versioning suspended",
-		info:         ObjectInfo{Size: 100, VersionID: nullVersionID},
+		info:         ObjectInfo{Size: 100, VersionID: NullVersionID},
 		rcfg:         replicationConfig{Config: &configs[0]},
 		expectedSync: false,
 	},

@@ -918,7 +918,7 @@ func (er erasureObjects) HealObject(ctx context.Context, bucket, object, version
 
 	// When versionID is empty, we read directly from the `null` versionID for healing.
 	if versionID == "" {
-		versionID = nullVersionID
+		versionID = NullVersionID
 	}
 
 	// Perform quick read without lock.
