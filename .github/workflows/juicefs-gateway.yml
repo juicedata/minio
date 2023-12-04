@@ -25,9 +25,10 @@ jobs:
       - name: format fs and start minio juicefs gateway
         shell: bash
         run:  |
-          curl -sSL https://d.juicefs.com/install | sh -
+          wget https://github.com/juicedata/juicefs/releases/download/v1.0.6/juicefs-1.0.6-linux-amd64.tar.gz
+          tar -zxvf juicefs-1.0.6-linux-amd64.tar.gz
           sudo apt-get install -y redis-tools redis-server
-          juicefs format 'redis://127.0.0.1:6379/1' s3gateway
+          ./juicefs format 'redis://127.0.0.1:6379/1' s3gateway
           make
           export MINIO_ROOT_USER=testUser
           export MINIO_ROOT_PASSWORD=testUserPassword
