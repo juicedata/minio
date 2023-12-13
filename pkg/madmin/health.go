@@ -143,7 +143,7 @@ type PartitionStat struct {
 	Device     string     `json:"device"`
 	Mountpoint string     `json:"mountpoint,omitempty"`
 	Fstype     string     `json:"fstype,omitempty"`
-	Opts       string     `json:"opts,omitempty"`
+	Opts       []string   `json:"opts,omitempty"`
 	SmartInfo  smart.Info `json:"smartInfo,omitempty"`
 }
 
