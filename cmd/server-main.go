@@ -672,7 +672,7 @@ func ServerMainForJFS(ctx *cli.Context, jfs ObjectLayer) {
 		initBackgroundExpiry(GlobalContext, jfs)
 	}
 
-	initDataScanner(GlobalContext, jfs)
+	//initDataScanner(GlobalContext, jfs)
 
 	if err = initServer(GlobalContext, jfs); err != nil {
 		var cerr config.Err
