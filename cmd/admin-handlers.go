@@ -182,6 +182,10 @@ func (a adminAPIHandlers) ServerUpdateHandler(w http.ResponseWriter, r *http.Req
 	globalServiceSignalCh <- serviceRestart
 }
 
+func (a adminAPIHandlers) UnsupportedHandler(w http.ResponseWriter, r *http.Request) {
+	writeErrorResponseJSON(newContext(r, w, "UnsupportedHandler"), w, errorCodes.ToAPIErr(ErrNotImplemented), r.URL)
+}
+
 // ServiceHandler - POST /minio/admin/v3/service?action={action}
 // ----------
 // restarts/stops minio server gracefully. In a distributed setup,
