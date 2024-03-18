@@ -40,8 +40,6 @@ import (
 	"github.com/minio/minio/pkg/certs"
 	"github.com/minio/minio/pkg/color"
 	"github.com/minio/minio/pkg/env"
-	"github.com/minio/minio/pkg/madmin"
-	"github.com/minio/minio/pkg/sync/errgroup"
 )
 
 // ServerFlags - server command specific flags
@@ -183,13 +181,13 @@ func serverHandleEnvVars() {
 var globalHealStateLK sync.RWMutex
 
 func newAllSubsystems() {
-	if globalIsErasure {
-		globalHealStateLK.Lock()
-		// New global heal state
-		globalAllHealState = newHealState(true)
-		globalBackgroundHealState = newHealState(false)
-		globalHealStateLK.Unlock()
-	}
+	//if globalIsErasure {
+	//	globalHealStateLK.Lock()
+	//	// New global heal state
+	//	globalAllHealState = newHealState(true)
+	//	globalBackgroundHealState = newHealState(false)
+	//	globalHealStateLK.Unlock()
+	//}
 
 	// Create new notification system and initialize notification targets
 	globalNotificationSys = NewNotificationSys(globalEndpoints)
@@ -215,26 +213,26 @@ func newAllSubsystems() {
 	globalPolicySys = NewPolicySys()
 
 	// Create new lifecycle system.
-	globalLifecycleSys = NewLifecycleSys()
+	//globalLifecycleSys = NewLifecycleSys()
 
 	// Create new bucket encryption subsystem
-	globalBucketSSEConfigSys = NewBucketSSEConfigSys()
+	//globalBucketSSEConfigSys = NewBucketSSEConfigSys()
 
 	// Create new bucket object lock subsystem
 	globalBucketObjectLockSys = NewBucketObjectLockSys()
 
 	// Create new bucket quota subsystem
-	globalBucketQuotaSys = NewBucketQuotaSys()
+	//globalBucketQuotaSys = NewBucketQuotaSys()
 
 	// Create new bucket versioning subsystem
-	if globalBucketVersioningSys == nil {
-		globalBucketVersioningSys = NewBucketVersioningSys()
-	} else {
-		globalBucketVersioningSys.Reset()
-	}
+	//if globalBucketVersioningSys == nil {
+	//	globalBucketVersioningSys = NewBucketVersioningSys()
+	//} else {
+	//	globalBucketVersioningSys.Reset()
+	//}
 
 	// Create new bucket replication subsytem
-	globalBucketTargetSys = NewBucketTargetSys()
+	//globalBucketTargetSys = NewBucketTargetSys()
 }
 
 func initServer(ctx context.Context, newObject ObjectLayer) error {
@@ -339,32 +337,32 @@ func initAllSubsystems(ctx context.Context, newObject ObjectLayer) (err error) {
 		return fmt.Errorf("Unable to list buckets to heal: %w", err)
 	}
 
-	if globalIsErasure {
-		if len(buckets) > 0 {
-			if len(buckets) == 1 {
-				logger.Info(fmt.Sprintf("Verifying if %d bucket is consistent across drives...", len(buckets)))
-			} else {
-				logger.Info(fmt.Sprintf("Verifying if %d buckets are consistent across drives...", len(buckets)))
-			}
-		}
-
-		// Limit to no more than 50 concurrent buckets.
-		g := errgroup.WithNErrs(len(buckets)).WithConcurrency(50)
-		ctx, cancel := g.WithCancelOnError(ctx)
-		defer cancel()
-		for index := range buckets {
-			index := index
-			g.Go(func() error {
-				if _, berr := newObject.HealBucket(ctx, buckets[index].Name, madmin.HealOpts{Recreate: true}); berr != nil {
-					return fmt.Errorf("Unable to list buckets to heal: %w", berr)
-				}
-				return nil
-			}, index)
-		}
-		if err := g.WaitErr(); err != nil {
-			return err
-		}
-	}
+	//if globalIsErasure {
+	//	if len(buckets) > 0 {
+	//		if len(buckets) == 1 {
+	//			logger.Info(fmt.Sprintf("Verifying if %d bucket is consistent across drives...", len(buckets)))
+	//		} else {
+	//			logger.Info(fmt.Sprintf("Verifying if %d buckets are consistent across drives...", len(buckets)))
+	//		}
+	//	}
+	//
+	//	// Limit to no more than 50 concurrent buckets.
+	//	g := errgroup.WithNErrs(len(buckets)).WithConcurrency(50)
+	//	ctx, cancel := g.WithCancelOnError(ctx)
+	//	defer cancel()
+	//	for index := range buckets {
+	//		index := index
+	//		g.Go(func() error {
+	//			if _, berr := newObject.HealBucket(ctx, buckets[index].Name, madmin.HealOpts{Recreate: true}); berr != nil {
+	//				return fmt.Errorf("Unable to list buckets to heal: %w", berr)
+	//			}
+	//			return nil
+	//		}, index)
+	//	}
+	//	if err := g.WaitErr(); err != nil {
+	//		return err
+	//	}
+	//}
 
 	// Initialize config system.
 	if err = globalConfigSys.Init(newObject); err != nil {
@@ -393,7 +391,7 @@ func initAllSubsystems(ctx context.Context, newObject ObjectLayer) (err error) {
 	globalNotificationSys.Init(ctx, buckets, newObject)
 
 	// Initialize bucket targets sub-system.
-	globalBucketTargetSys.Init(ctx, buckets, newObject)
+	//globalBucketTargetSys.Init(ctx, buckets, newObject)
 
 	return nil
 }
