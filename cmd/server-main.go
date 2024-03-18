@@ -599,24 +599,24 @@ func ServerMainForJFS(ctx *cli.Context, jfs ObjectLayer) {
 	}()
 
 	// Is distributed setup, error out if no certificates are found for HTTPS endpoints.
-	if globalIsDistErasure {
-		if globalEndpoints.HTTPS() && !globalIsTLS {
-			logger.Fatal(config.ErrNoCertsAndHTTPSEndpoints(nil), "Unable to start the server")
-		}
-		if !globalEndpoints.HTTPS() && globalIsTLS {
-			logger.Fatal(config.ErrCertsAndHTTPEndpoints(nil), "Unable to start the server")
-		}
-	}
+	//if globalIsDistErasure {
+	//	if globalEndpoints.HTTPS() && !globalIsTLS {
+	//		logger.Fatal(config.ErrNoCertsAndHTTPSEndpoints(nil), "Unable to start the server")
+	//	}
+	//	if !globalEndpoints.HTTPS() && globalIsTLS {
+	//		logger.Fatal(config.ErrCertsAndHTTPEndpoints(nil), "Unable to start the server")
+	//	}
+	//}
 
-	if !globalCLIContext.Quiet && !globalInplaceUpdateDisabled {
-		// Check for new updates from dl.min.io.
-		checkUpdate(getMinioMode())
-	}
+	//if !globalCLIContext.Quiet && !globalInplaceUpdateDisabled {
+	//	// Check for new updates from dl.min.io.
+	//	checkUpdate(getMinioMode())
+	//}
 
-	if !globalActiveCred.IsValid() && globalIsDistErasure {
-		logger.Fatal(config.ErrEnvCredentialsMissingDistributed(nil),
-			"Unable to initialize the server in distributed mode")
-	}
+	//if !globalActiveCred.IsValid() && globalIsDistErasure {
+	//	logger.Fatal(config.ErrEnvCredentialsMissingDistributed(nil),
+	//		"Unable to initialize the server in distributed mode")
+	//}
 
 	// Set system resources to maximum.
 	setMaxResources()
@@ -642,21 +642,21 @@ func ServerMainForJFS(ctx *cli.Context, jfs ObjectLayer) {
 
 	setHTTPServer(httpServer)
 
-	if globalIsDistErasure && globalEndpoints.FirstLocal() {
-		for {
-			// Additionally in distributed setup, validate the setup and configuration.
-			err := verifyServerSystemConfig(GlobalContext, globalEndpoints)
-			if err == nil || errors.Is(err, context.Canceled) {
-				break
-			}
-			logger.LogIf(GlobalContext, err, "Unable to initialize distributed setup, retrying.. after 5 seconds")
-			select {
-			case <-GlobalContext.Done():
-				return
-			case <-time.After(500 * time.Millisecond):
-			}
-		}
-	}
+	//if globalIsDistErasure && globalEndpoints.FirstLocal() {
+	//	for {
+	//		// Additionally in distributed setup, validate the setup and configuration.
+	//		err := verifyServerSystemConfig(GlobalContext, globalEndpoints)
+	//		if err == nil || errors.Is(err, context.Canceled) {
+	//			break
+	//		}
+	//		logger.LogIf(GlobalContext, err, "Unable to initialize distributed setup, retrying.. after 5 seconds")
+	//		select {
+	//		case <-GlobalContext.Done():
+	//			return
+	//		case <-time.After(500 * time.Millisecond):
+	//		}
+	//	}
+	//}
 
 	//newObject, err := newObjectLayer(GlobalContext, globalEndpoints)
 	//if err != nil {
@@ -666,11 +666,11 @@ func ServerMainForJFS(ctx *cli.Context, jfs ObjectLayer) {
 	logger.SetDeploymentID(globalDeploymentID)
 
 	// Enable background operations for erasure coding
-	if globalIsErasure {
-		initAutoHeal(GlobalContext, jfs)
-		initBackgroundTransition(GlobalContext, jfs)
-		initBackgroundExpiry(GlobalContext, jfs)
-	}
+	//if globalIsErasure {
+	//	initAutoHeal(GlobalContext, jfs)
+	//	initBackgroundTransition(GlobalContext, jfs)
+	//	initBackgroundExpiry(GlobalContext, jfs)
+	//}
 
 	//initDataScanner(GlobalContext, jfs)
 
@@ -688,9 +688,10 @@ func ServerMainForJFS(ctx *cli.Context, jfs ObjectLayer) {
 		}
 	}
 
-	if globalIsErasure { // to be done after config init
-		initBackgroundReplication(GlobalContext, jfs)
-	}
+	//if globalIsErasure { // to be done after config init
+	//	initBackgroundReplication(GlobalContext, jfs)
+	//}
+
 	if globalCacheConfig.Enabled {
 		// initialize the new disk cache objects.
 		var cacheAPI CacheObjectLayer
