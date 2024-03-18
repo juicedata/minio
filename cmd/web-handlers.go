@@ -611,14 +611,14 @@ func (web *webAPIHandlers) ListObjects(r *http.Request, args *ListObjectsArgs, r
 
 // RemoveObjectArgs - args to remove an object, JSON will look like.
 //
-// {
-//     "bucketname": "testbucket",
-//     "objects": [
-//         "photos/hawaii/",
-//         "photos/maldives/",
-//         "photos/sanjose.jpg"
-//     ]
-// }
+//	{
+//	    "bucketname": "testbucket",
+//	    "objects": [
+//	        "photos/hawaii/",
+//	        "photos/maldives/",
+//	        "photos/sanjose.jpg"
+//	    ]
+//	}
 type RemoveObjectArgs struct {
 	Objects    []string `json:"objects"`    // Contains objects, prefixes.
 	BucketName string   `json:"bucketname"` // Contains bucket name.
@@ -1217,10 +1217,10 @@ func (web *webAPIHandlers) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := enforceBucketQuota(ctx, bucket, size); err != nil {
-		writeWebErrorResponse(w, err)
-		return
-	}
+	//if err := enforceBucketQuota(ctx, bucket, size); err != nil {
+	//	writeWebErrorResponse(w, err)
+	//	return
+	//}
 
 	// Extract incoming metadata if any.
 	metadata, err := extractMetadata(ctx, r)
