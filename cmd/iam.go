@@ -603,6 +603,9 @@ func (sys *IAMSys) Init(ctx context.Context, objAPI ObjectLayer) {
 		// Migrate IAM configuration, if necessary.
 		if err := sys.doIAMConfigMigration(ctx); err != nil {
 			txnLk.Unlock()
+			if errors.Is(err, madmin.ErrMaliciousData) {
+				logger.Fatal(err, "Unable to read encrypted IAM configuration. Please check your credentials.")
+			}
 			if errors.Is(err, errDiskNotFound) ||
 				errors.Is(err, errConfigNotFound) ||
 				errors.Is(err, context.DeadlineExceeded) ||
