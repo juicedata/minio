@@ -105,12 +105,9 @@ func (sys *BucketQuotaSys) check(ctx context.Context, bucket string, size int64)
 	return nil
 }
 
-//func enforceBucketQuota(ctx context.Context, bucket string, size int64) error {
-//	if size < 0 {
-//		return nil
-//	}
-//	return globalBucketQuotaSys.check(ctx, bucket, size)
-//}
+func enforceBucketQuota(ctx context.Context, bucket string, size int64) error {
+	return nil
+}
 
 // enforceFIFOQuota deletes objects in FIFO order until sufficient objects
 // have been deleted so as to bring bucket usage within quota.

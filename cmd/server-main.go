@@ -596,26 +596,6 @@ func ServerMainForJFS(ctx *cli.Context, jfs ObjectLayer) {
 		return fmt.Sprintf("%s://%s", getURLScheme(globalIsTLS), net.JoinHostPort(host, globalMinioPort))
 	}()
 
-	// Is distributed setup, error out if no certificates are found for HTTPS endpoints.
-	//if globalIsDistErasure {
-	//	if globalEndpoints.HTTPS() && !globalIsTLS {
-	//		logger.Fatal(config.ErrNoCertsAndHTTPSEndpoints(nil), "Unable to start the server")
-	//	}
-	//	if !globalEndpoints.HTTPS() && globalIsTLS {
-	//		logger.Fatal(config.ErrCertsAndHTTPEndpoints(nil), "Unable to start the server")
-	//	}
-	//}
-
-	//if !globalCLIContext.Quiet && !globalInplaceUpdateDisabled {
-	//	// Check for new updates from dl.min.io.
-	//	checkUpdate(getMinioMode())
-	//}
-
-	//if !globalActiveCred.IsValid() && globalIsDistErasure {
-	//	logger.Fatal(config.ErrEnvCredentialsMissingDistributed(nil),
-	//		"Unable to initialize the server in distributed mode")
-	//}
-
 	// Set system resources to maximum.
 	setMaxResources()
 
@@ -640,37 +620,7 @@ func ServerMainForJFS(ctx *cli.Context, jfs ObjectLayer) {
 
 	setHTTPServer(httpServer)
 
-	//if globalIsDistErasure && globalEndpoints.FirstLocal() {
-	//	for {
-	//		// Additionally in distributed setup, validate the setup and configuration.
-	//		err := verifyServerSystemConfig(GlobalContext, globalEndpoints)
-	//		if err == nil || errors.Is(err, context.Canceled) {
-	//			break
-	//		}
-	//		logger.LogIf(GlobalContext, err, "Unable to initialize distributed setup, retrying.. after 5 seconds")
-	//		select {
-	//		case <-GlobalContext.Done():
-	//			return
-	//		case <-time.After(500 * time.Millisecond):
-	//		}
-	//	}
-	//}
-
-	//newObject, err := newObjectLayer(GlobalContext, globalEndpoints)
-	//if err != nil {
-	//	logFatalErrs(err, Endpoint{}, true)
-	//}
-
 	logger.SetDeploymentID(globalDeploymentID)
-
-	// Enable background operations for erasure coding
-	//if globalIsErasure {
-	//	initAutoHeal(GlobalContext, jfs)
-	//	initBackgroundTransition(GlobalContext, jfs)
-	//	initBackgroundExpiry(GlobalContext, jfs)
-	//}
-
-	//initDataScanner(GlobalContext, jfs)
 
 	if err = initServer(GlobalContext, jfs); err != nil {
 		var cerr config.Err
@@ -685,10 +635,6 @@ func ServerMainForJFS(ctx *cli.Context, jfs ObjectLayer) {
 			logger.FatalIf(err, "Server startup canceled upon user request")
 		}
 	}
-
-	//if globalIsErasure { // to be done after config init
-	//	initBackgroundReplication(GlobalContext, jfs)
-	//}
 
 	if globalCacheConfig.Enabled {
 		// initialize the new disk cache objects.
