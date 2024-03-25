@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path"
 	"strings"
 	"sync"
@@ -498,8 +499,15 @@ func listIAMConfigItems(ctx context.Context, objAPI ObjectLayer, pathPrefix stri
 
 func (iamOS *IAMObjectStore) watch(ctx context.Context, sys *IAMSys) {
 	// Refresh IAMSys.
+	var interval = globalRefreshIAMInterval
+	if intervalStr := os.Getenv("MINIO_REFRESH_IAM_INTERVAL"); intervalStr != "" {
+		if duration, err := time.ParseDuration(intervalStr); err == nil {
+			interval = duration
+		}
+	}
+
 	for {
-		time.Sleep(globalRefreshIAMInterval)
+		time.Sleep(interval)
 		if err := iamOS.loadAll(ctx, sys); err != nil {
 			logger.LogIf(ctx, err)
 		}
