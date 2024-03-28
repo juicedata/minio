@@ -1164,6 +1164,9 @@ func (sys *IAMSys) UpdateServiceAccount(ctx context.Context, accessKey string, o
 	}
 
 	if opts.secretKey != "" {
+		if !auth.IsSecretKeyValid(opts.secretKey) {
+			return auth.ErrInvalidSecretKeyLength
+		}
 		cr.SecretKey = opts.secretKey
 	}
 
