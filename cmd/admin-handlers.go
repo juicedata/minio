@@ -146,16 +146,6 @@ func (a adminAPIHandlers) ServerUpdateHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	for _, nerr := range globalNotificationSys.ServerUpdate(ctx, u, sha256Sum, lrTime, releaseInfo) {
-		if nerr.Err != nil {
-			logger.GetReqInfo(ctx).SetTags("peerAddress", nerr.Host.String())
-			logger.LogIf(ctx, nerr.Err)
-			err = fmt.Errorf("Server update failed, please do not restart the servers yet: failed with %w", nerr.Err)
-			writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
-			return
-		}
-	}
-
 	updateStatus, err := updateServer(u, sha256Sum, lrTime, releaseInfo, mode)
 	if err != nil {
 		err = fmt.Errorf("Server update failed, please do not restart the servers yet: failed with %w", err)
@@ -171,14 +161,6 @@ func (a adminAPIHandlers) ServerUpdateHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	writeSuccessResponseJSON(w, jsonBytes)
-
-	// Notify all other MinIO peers signal service.
-	for _, nerr := range globalNotificationSys.SignalService(serviceRestart) {
-		if nerr.Err != nil {
-			logger.GetReqInfo(ctx).SetTags("peerAddress", nerr.Host.String())
-			logger.LogIf(ctx, nerr.Err)
-		}
-	}
 
 	globalServiceSignalCh <- serviceRestart
 }
@@ -219,14 +201,6 @@ func (a adminAPIHandlers) ServiceHandler(w http.ResponseWriter, r *http.Request)
 	}
 	if objectAPI == nil {
 		return
-	}
-
-	// Notify all other MinIO peers signal service.
-	for _, nerr := range globalNotificationSys.SignalService(serviceSig) {
-		if nerr.Err != nil {
-			logger.GetReqInfo(ctx).SetTags("peerAddress", nerr.Host.String())
-			logger.LogIf(ctx, nerr.Err)
-		}
 	}
 
 	// Reply to the client before restarting, stopping MinIO server.
@@ -919,7 +893,7 @@ func validateAdminReq(ctx context.Context, w http.ResponseWriter, r *http.Reques
 	var adminAPIErr APIErrorCode
 	// Get current object layer instance.
 	objectAPI := newObjectLayerFn()
-	if objectAPI == nil || globalNotificationSys == nil {
+	if objectAPI == nil {
 		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrServerNotInitialized), r.URL)
 		return nil, cred
 	}
@@ -1376,7 +1350,7 @@ func (a adminAPIHandlers) HealthInfoHandler(w http.ResponseWriter, r *http.Reque
 	defer cancel()
 
 	var err error
-	nsLock := objectAPI.NewNSLock(MinioMetaBucket, "health-check-in-progress")
+	nsLock := objectAPI.NewNSLock(MinioMetaBucket, MinioMetaLockFile)
 	ctx, err = nsLock.GetLock(ctx, newDynamicTimeout(deadline, deadline))
 	if err != nil { // returns a locked lock
 		errResp(err)

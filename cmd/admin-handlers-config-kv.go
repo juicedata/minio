@@ -81,6 +81,8 @@ func (a adminAPIHandlers) DelConfigKVHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	globalIAMSys.store.lock()
+	defer globalIAMSys.store.unlock()
 	cfg, err := readServerConfig(ctx, objectAPI)
 	if err != nil {
 		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
@@ -123,6 +125,8 @@ func (a adminAPIHandlers) SetConfigKVHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	globalIAMSys.store.lock()
+	defer globalIAMSys.store.unlock()
 	cfg, err := readServerConfig(ctx, objectAPI)
 	if err != nil {
 		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
@@ -158,7 +162,7 @@ func (a adminAPIHandlers) SetConfigKVHandler(w http.ResponseWriter, r *http.Requ
 			writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
 			return
 		}
-		globalNotificationSys.SignalService(serviceReloadDynamic)
+		//globalNotificationSys.SignalService(serviceReloadDynamic)
 		// If all values were dynamic, tell the client.
 		w.Header().Set(madmin.ConfigAppliedHeader, madmin.ConfigAppliedTrue)
 	}
@@ -392,6 +396,8 @@ func (a adminAPIHandlers) SetConfigHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	globalIAMSys.store.lock()
+	defer globalIAMSys.store.unlock()
 	// Update the actual server config on disk.
 	if err = saveServerConfig(ctx, objectAPI, cfg); err != nil {
 		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)

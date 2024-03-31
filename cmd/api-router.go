@@ -290,7 +290,7 @@ func registerAPIRouter(router *mux.Router) {
 
 		// PostRestoreObject
 		router.Methods(http.MethodPost).Path("/{object:.+}").HandlerFunc(
-			collectAPIStats("restoreobject", maxClients(httpTraceAll(api.PostRestoreObjectHandler)))).Queries("restore", "")
+			collectAPIStats("restoreobject", maxClients(httpTraceAll(api.UnsupportedHandler)))).Queries("restore", "")
 
 		/// Bucket operations
 		// GetBucketLocation
@@ -301,19 +301,19 @@ func registerAPIRouter(router *mux.Router) {
 			collectAPIStats("getbucketpolicy", maxClients(httpTraceAll(api.GetBucketPolicyHandler)))).Queries("policy", "")
 		// GetBucketLifecycle
 		router.Methods(http.MethodGet).HandlerFunc(
-			collectAPIStats("getbucketlifecycle", maxClients(httpTraceAll(api.GetBucketLifecycleHandler)))).Queries("lifecycle", "")
+			collectAPIStats("getbucketlifecycle", maxClients(httpTraceAll(api.UnsupportedHandler)))).Queries("lifecycle", "")
 		// GetBucketEncryption
 		router.Methods(http.MethodGet).HandlerFunc(
 			collectAPIStats("getbucketencryption", maxClients(httpTraceAll(api.GetBucketEncryptionHandler)))).Queries("encryption", "")
 		// GetBucketObjectLockConfig
 		router.Methods(http.MethodGet).HandlerFunc(
-			collectAPIStats("getbucketobjectlockconfiguration", maxClients(httpTraceAll(api.GetBucketObjectLockConfigHandler)))).Queries("object-lock", "")
+			collectAPIStats("getbucketobjectlockconfiguration", maxClients(httpTraceAll(api.UnsupportedHandler)))).Queries("object-lock", "")
 		// GetBucketReplicationConfig
 		router.Methods(http.MethodGet).HandlerFunc(
-			collectAPIStats("getbucketreplicationconfiguration", maxClients(httpTraceAll(api.GetBucketReplicationConfigHandler)))).Queries("replication", "")
+			collectAPIStats("getbucketreplicationconfiguration", maxClients(httpTraceAll(api.UnsupportedHandler)))).Queries("replication", "")
 		// GetBucketVersioning
 		router.Methods(http.MethodGet).HandlerFunc(
-			collectAPIStats("getbucketversioning", maxClients(httpTraceAll(api.GetBucketVersioningHandler)))).Queries("versioning", "")
+			collectAPIStats("getbucketversioning", maxClients(httpTraceAll(api.UnsupportedHandler)))).Queries("versioning", "")
 		// GetBucketNotification
 		router.Methods(http.MethodGet).HandlerFunc(
 			collectAPIStats("getbucketnotification", maxClients(httpTraceAll(api.GetBucketNotificationHandler)))).Queries("notification", "")
@@ -370,10 +370,10 @@ func registerAPIRouter(router *mux.Router) {
 			collectAPIStats("getpolicystatus", maxClients(httpTraceAll(api.GetBucketPolicyStatusHandler)))).Queries("policyStatus", "")
 		// PutBucketLifecycle
 		router.Methods(http.MethodPut).HandlerFunc(
-			collectAPIStats("putbucketlifecycle", maxClients(httpTraceAll(api.PutBucketLifecycleHandler)))).Queries("lifecycle", "")
+			collectAPIStats("putbucketlifecycle", maxClients(httpTraceAll(api.UnsupportedHandler)))).Queries("lifecycle", "")
 		// PutBucketReplicationConfig
 		router.Methods(http.MethodPut).HandlerFunc(
-			collectAPIStats("putbucketreplicationconfiguration", maxClients(httpTraceAll(api.PutBucketReplicationConfigHandler)))).Queries("replication", "")
+			collectAPIStats("putbucketreplicationconfiguration", maxClients(httpTraceAll(api.UnsupportedHandler)))).Queries("replication", "")
 		// PutBucketEncryption
 		router.Methods(http.MethodPut).HandlerFunc(
 			collectAPIStats("putbucketencryption", maxClients(httpTraceAll(api.PutBucketEncryptionHandler)))).Queries("encryption", "")
@@ -384,13 +384,13 @@ func registerAPIRouter(router *mux.Router) {
 
 		// PutBucketObjectLockConfig
 		router.Methods(http.MethodPut).HandlerFunc(
-			collectAPIStats("putbucketobjectlockconfig", maxClients(httpTraceAll(api.PutBucketObjectLockConfigHandler)))).Queries("object-lock", "")
+			collectAPIStats("putbucketobjectlockconfig", maxClients(httpTraceAll(api.UnsupportedHandler)))).Queries("object-lock", "")
 		// PutBucketTaggingHandler
 		router.Methods(http.MethodPut).HandlerFunc(
 			collectAPIStats("putbuckettagging", maxClients(httpTraceAll(api.PutBucketTaggingHandler)))).Queries("tagging", "")
 		// PutBucketVersioning
 		router.Methods(http.MethodPut).HandlerFunc(
-			collectAPIStats("putbucketversioning", maxClients(httpTraceAll(api.PutBucketVersioningHandler)))).Queries("versioning", "")
+			collectAPIStats("putbucketversioning", maxClients(httpTraceAll(api.UnsupportedHandler)))).Queries("versioning", "")
 		// PutBucketNotification
 		router.Methods(http.MethodPut).HandlerFunc(
 			collectAPIStats("putbucketnotification", maxClients(httpTraceAll(api.PutBucketNotificationHandler)))).Queries("notification", "")
@@ -425,7 +425,7 @@ func registerAPIRouter(router *mux.Router) {
 		//
 		// GetBucketReplicationMetrics
 		router.Methods(http.MethodGet).HandlerFunc(
-			collectAPIStats("getbucketreplicationmetrics", maxClients(httpTraceAll(api.GetBucketReplicationMetricsHandler)))).Queries("replication-metrics", "")
+			collectAPIStats("getbucketreplicationmetrics", maxClients(httpTraceAll(api.UnsupportedHandler)))).Queries("replication-metrics", "")
 
 		// S3 ListObjectsV1 (Legacy)
 		router.Methods(http.MethodGet).HandlerFunc(

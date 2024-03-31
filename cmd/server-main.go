@@ -254,7 +254,7 @@ func initServer(ctx context.Context, newObject ObjectLayer) error {
 	// at a given time, this big transaction lock ensures this
 	// appropriately. This is also true for rotation of encrypted
 	// content.
-	txnLk := newObject.NewNSLock(MinioMetaBucket, minioConfigPrefix+"/transaction.lock")
+	txnLk := newObject.NewNSLock(MinioMetaBucket, MinioMetaLockFile)
 
 	// ****  WARNING ****
 	// Migrating to encrypted backend should happen before initialization of any

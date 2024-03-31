@@ -63,9 +63,9 @@ func registerAdminRouter(router *mux.Router, enableConfigOps, enableIAMOps bool)
 		adminRouter.Methods(http.MethodGet).Path(adminVersion + "/datausageinfo").HandlerFunc(httpTraceAll(adminAPI.UnsupportedHandler))
 
 		// Profiling operations
-		adminRouter.Methods(http.MethodPost).Path(adminVersion+"/profiling/start").HandlerFunc(httpTraceAll(adminAPI.StartProfilingHandler)).
+		adminRouter.Methods(http.MethodPost).Path(adminVersion+"/profiling/start").HandlerFunc(httpTraceAll(adminAPI.UnsupportedHandler)).
 			Queries("profilerType", "{profilerType:.*}")
-		adminRouter.Methods(http.MethodGet).Path(adminVersion + "/profiling/download").HandlerFunc(httpTraceAll(adminAPI.DownloadProfilingHandler))
+		adminRouter.Methods(http.MethodGet).Path(adminVersion + "/profiling/download").HandlerFunc(httpTraceAll(adminAPI.UnsupportedHandler))
 
 		// Config KV operations.
 		if enableConfigOps {
@@ -170,12 +170,12 @@ func registerAdminRouter(router *mux.Router, enableConfigOps, enableIAMOps bool)
 		if !globalIsGateway {
 			// Keep obdinfo for backward compatibility with mc
 			adminRouter.Methods(http.MethodGet).Path(adminVersion + "/obdinfo").
-				HandlerFunc(httpTraceHdrs(adminAPI.HealthInfoHandler))
+				HandlerFunc(httpTraceHdrs(adminAPI.UnsupportedHandler))
 			// -- Health API --
 			adminRouter.Methods(http.MethodGet).Path(adminVersion + "/healthinfo").
-				HandlerFunc(httpTraceHdrs(adminAPI.HealthInfoHandler))
+				HandlerFunc(httpTraceHdrs(adminAPI.UnsupportedHandler))
 			adminRouter.Methods(http.MethodGet).Path(adminVersion + "/bandwidth").
-				HandlerFunc(httpTraceHdrs(adminAPI.BandwidthMonitorHandler))
+				HandlerFunc(httpTraceHdrs(adminAPI.UnsupportedHandler))
 		}
 	}
 

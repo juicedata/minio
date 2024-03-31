@@ -39,7 +39,7 @@ func validateAdminUsersReq(ctx context.Context, w http.ResponseWriter, r *http.R
 
 	// Get current object layer instance.
 	objectAPI := newObjectLayerFn()
-	if objectAPI == nil || globalNotificationSys == nil {
+	if objectAPI == nil {
 		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrServerNotInitialized), r.URL)
 		return nil, cred
 	}
@@ -81,14 +81,6 @@ func (a adminAPIHandlers) RemoveUser(w http.ResponseWriter, r *http.Request) {
 	if err := globalIAMSys.DeleteUser(accessKey); err != nil {
 		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
 		return
-	}
-
-	// Notify all other MinIO peers to delete user.
-	for _, nerr := range globalNotificationSys.DeleteUser(accessKey) {
-		if nerr.Err != nil {
-			logger.GetReqInfo(ctx).SetTags("peerAddress", nerr.Host.String())
-			logger.LogIf(ctx, nerr.Err)
-		}
 	}
 }
 
@@ -137,7 +129,7 @@ func (a adminAPIHandlers) GetUserInfo(w http.ResponseWriter, r *http.Request) {
 
 	// Get current object layer instance.
 	objectAPI := newObjectLayerFn()
-	if objectAPI == nil || globalNotificationSys == nil {
+	if objectAPI == nil {
 		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrServerNotInitialized), r.URL)
 		return
 	}
@@ -217,14 +209,6 @@ func (a adminAPIHandlers) UpdateGroupMembers(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
 		return
-	}
-
-	// Notify all other MinIO peers to load group.
-	for _, nerr := range globalNotificationSys.LoadGroup(updReq.Group) {
-		if nerr.Err != nil {
-			logger.GetReqInfo(ctx).SetTags("peerAddress", nerr.Host.String())
-			logger.LogIf(ctx, nerr.Err)
-		}
 	}
 }
 
@@ -311,13 +295,6 @@ func (a adminAPIHandlers) SetGroupStatus(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Notify all other MinIO peers to reload user.
-	for _, nerr := range globalNotificationSys.LoadGroup(group) {
-		if nerr.Err != nil {
-			logger.GetReqInfo(ctx).SetTags("peerAddress", nerr.Host.String())
-			logger.LogIf(ctx, nerr.Err)
-		}
-	}
 }
 
 // SetUserStatus - PUT /minio/admin/v3/set-user-status?accessKey=<access_key>&status=[enabled|disabled]
@@ -346,13 +323,6 @@ func (a adminAPIHandlers) SetUserStatus(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Notify all other MinIO peers to reload user.
-	for _, nerr := range globalNotificationSys.LoadUser(accessKey, false) {
-		if nerr.Err != nil {
-			logger.GetReqInfo(ctx).SetTags("peerAddress", nerr.Host.String())
-			logger.LogIf(ctx, nerr.Err)
-		}
-	}
 }
 
 // AddUser - PUT /minio/admin/v3/add-user?accessKey=<access_key>
@@ -366,7 +336,7 @@ func (a adminAPIHandlers) AddUser(w http.ResponseWriter, r *http.Request) {
 
 	// Get current object layer instance.
 	objectAPI := newObjectLayerFn()
-	if objectAPI == nil || globalNotificationSys == nil {
+	if objectAPI == nil {
 		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrServerNotInitialized), r.URL)
 		return
 	}
@@ -448,13 +418,6 @@ func (a adminAPIHandlers) AddUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Notify all other Minio peers to reload user
-	for _, nerr := range globalNotificationSys.LoadUser(accessKey, false) {
-		if nerr.Err != nil {
-			logger.GetReqInfo(ctx).SetTags("peerAddress", nerr.Host.String())
-			logger.LogIf(ctx, nerr.Err)
-		}
-	}
 }
 
 // AddServiceAccount - PUT /minio/admin/v3/add-service-account
@@ -465,7 +428,7 @@ func (a adminAPIHandlers) AddServiceAccount(w http.ResponseWriter, r *http.Reque
 
 	// Get current object layer instance.
 	objectAPI := newObjectLayerFn()
-	if objectAPI == nil || globalNotificationSys == nil {
+	if objectAPI == nil {
 		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrServerNotInitialized), r.URL)
 		return
 	}
@@ -543,14 +506,6 @@ func (a adminAPIHandlers) AddServiceAccount(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Notify all other Minio peers to reload user the service account
-	for _, nerr := range globalNotificationSys.LoadServiceAccount(newCred.AccessKey) {
-		if nerr.Err != nil {
-			logger.GetReqInfo(ctx).SetTags("peerAddress", nerr.Host.String())
-			logger.LogIf(ctx, nerr.Err)
-		}
-	}
-
 	var createResp = madmin.AddServiceAccountResp{
 		Credentials: auth.Credentials{
 			AccessKey: newCred.AccessKey,
@@ -581,7 +536,7 @@ func (a adminAPIHandlers) UpdateServiceAccount(w http.ResponseWriter, r *http.Re
 
 	// Get current object layer instance.
 	objectAPI := newObjectLayerFn()
-	if objectAPI == nil || globalNotificationSys == nil {
+	if objectAPI == nil {
 		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrServerNotInitialized), r.URL)
 		return
 	}
@@ -648,14 +603,6 @@ func (a adminAPIHandlers) UpdateServiceAccount(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Notify all other Minio peers to reload user the service account
-	for _, nerr := range globalNotificationSys.LoadServiceAccount(accessKey) {
-		if nerr.Err != nil {
-			logger.GetReqInfo(ctx).SetTags("peerAddress", nerr.Host.String())
-			logger.LogIf(ctx, nerr.Err)
-		}
-	}
-
 	writeSuccessNoContent(w)
 }
 
@@ -667,7 +614,7 @@ func (a adminAPIHandlers) InfoServiceAccount(w http.ResponseWriter, r *http.Requ
 
 	// Get current object layer instance.
 	objectAPI := newObjectLayerFn()
-	if objectAPI == nil || globalNotificationSys == nil {
+	if objectAPI == nil {
 		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrServerNotInitialized), r.URL)
 		return
 	}
@@ -766,7 +713,7 @@ func (a adminAPIHandlers) ListServiceAccounts(w http.ResponseWriter, r *http.Req
 
 	// Get current object layer instance.
 	objectAPI := newObjectLayerFn()
-	if objectAPI == nil || globalNotificationSys == nil {
+	if objectAPI == nil {
 		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrServerNotInitialized), r.URL)
 		return
 	}
@@ -844,7 +791,7 @@ func (a adminAPIHandlers) DeleteServiceAccount(w http.ResponseWriter, r *http.Re
 
 	// Get current object layer instance.
 	objectAPI := newObjectLayerFn()
-	if objectAPI == nil || globalNotificationSys == nil {
+	if objectAPI == nil {
 		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrServerNotInitialized), r.URL)
 		return
 	}
@@ -912,7 +859,7 @@ func (a adminAPIHandlers) AccountInfoHandler(w http.ResponseWriter, r *http.Requ
 
 	// Get current object layer instance.
 	objectAPI := newObjectLayerFn()
-	if objectAPI == nil || globalNotificationSys == nil {
+	if objectAPI == nil {
 		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrServerNotInitialized), r.URL)
 		return
 	}
@@ -1186,14 +1133,6 @@ func (a adminAPIHandlers) RemoveCannedPolicy(w http.ResponseWriter, r *http.Requ
 		writeErrorResponseJSON(ctx, w, toAdminAPIErr(ctx, err), r.URL)
 		return
 	}
-
-	// Notify all other MinIO peers to delete policy
-	for _, nerr := range globalNotificationSys.DeletePolicy(policyName) {
-		if nerr.Err != nil {
-			logger.GetReqInfo(ctx).SetTags("peerAddress", nerr.Host.String())
-			logger.LogIf(ctx, nerr.Err)
-		}
-	}
 }
 
 // AddCannedPolicy - PUT /minio/admin/v3/add-canned-policy?name=<policy_name>
@@ -1239,13 +1178,6 @@ func (a adminAPIHandlers) AddCannedPolicy(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Notify all other MinIO peers to reload policy
-	for _, nerr := range globalNotificationSys.LoadPolicy(policyName) {
-		if nerr.Err != nil {
-			logger.GetReqInfo(ctx).SetTags("peerAddress", nerr.Host.String())
-			logger.LogIf(ctx, nerr.Err)
-		}
-	}
 }
 
 // SetPolicyForUserOrGroup - PUT /minio/admin/v3/set-policy?policy=xxx&user-or-group=?[&is-group]
@@ -1281,11 +1213,4 @@ func (a adminAPIHandlers) SetPolicyForUserOrGroup(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Notify all other MinIO peers to reload policy
-	for _, nerr := range globalNotificationSys.LoadPolicyMapping(entityName, isGroup) {
-		if nerr.Err != nil {
-			logger.GetReqInfo(ctx).SetTags("peerAddress", nerr.Host.String())
-			logger.LogIf(ctx, nerr.Err)
-		}
-	}
 }

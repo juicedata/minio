@@ -19,13 +19,12 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	pathutil "path"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
-
-	"fmt"
 	"time"
 
 	"github.com/minio/minio/cmd/logger"
@@ -38,9 +37,9 @@ var globalLockServer *localLocker
 
 // RWLocker - locker interface to introduce GetRLock, RUnlock.
 type RWLocker interface {
-	GetLock(ctx context.Context, timeout *dynamicTimeout) (newCtx context.Context, timedOutErr error)
+	GetLock(ctx context.Context, timeout *DynamicTimeout) (newCtx context.Context, timedOutErr error)
 	Unlock()
-	GetRLock(ctx context.Context, timeout *dynamicTimeout) (newCtx context.Context, timedOutErr error)
+	GetRLock(ctx context.Context, timeout *DynamicTimeout) (newCtx context.Context, timedOutErr error)
 	RUnlock()
 }
 
@@ -142,7 +141,7 @@ type distLockInstance struct {
 }
 
 // Lock - block until write lock is taken or timeout has occurred.
-func (di *distLockInstance) GetLock(ctx context.Context, timeout *dynamicTimeout) (context.Context, error) {
+func (di *distLockInstance) GetLock(ctx context.Context, timeout *DynamicTimeout) (context.Context, error) {
 	lockSource := getSource(2)
 	start := UTCNow()
 
@@ -163,7 +162,7 @@ func (di *distLockInstance) Unlock() {
 }
 
 // RLock - block until read lock is taken or timeout has occurred.
-func (di *distLockInstance) GetRLock(ctx context.Context, timeout *dynamicTimeout) (context.Context, error) {
+func (di *distLockInstance) GetRLock(ctx context.Context, timeout *DynamicTimeout) (context.Context, error) {
 	lockSource := getSource(2)
 	start := UTCNow()
 
@@ -207,7 +206,7 @@ func (n *NsLockMap) NewNSLock(lockers func() ([]dsync.NetLocker, string), volume
 }
 
 // Lock - block until write lock is taken or timeout has occurred.
-func (li *localLockInstance) GetLock(ctx context.Context, timeout *dynamicTimeout) (_ context.Context, timedOutErr error) {
+func (li *localLockInstance) GetLock(ctx context.Context, timeout *DynamicTimeout) (_ context.Context, timedOutErr error) {
 	lockSource := getSource(2)
 	start := UTCNow()
 	const readLock = false
@@ -237,7 +236,7 @@ func (li *localLockInstance) Unlock() {
 }
 
 // RLock - block until read lock is taken or timeout has occurred.
-func (li *localLockInstance) GetRLock(ctx context.Context, timeout *dynamicTimeout) (_ context.Context, timedOutErr error) {
+func (li *localLockInstance) GetRLock(ctx context.Context, timeout *DynamicTimeout) (_ context.Context, timedOutErr error) {
 	lockSource := getSource(2)
 	start := UTCNow()
 	const readLock = true

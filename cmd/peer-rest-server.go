@@ -102,7 +102,7 @@ func (s *peerRESTServer) LoadPolicyHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := globalIAMSys.LoadPolicy(objAPI, policyName); err != nil {
+	if err := globalIAMSys.LoadPolicy(policyName); err != nil {
 		s.writeErrorResponse(w, err)
 		return
 	}
@@ -131,7 +131,7 @@ func (s *peerRESTServer) LoadPolicyMappingHandler(w http.ResponseWriter, r *http
 	}
 	_, isGroup := vars[peerRESTIsGroup]
 
-	if err := globalIAMSys.LoadPolicyMapping(objAPI, userOrGroup, isGroup); err != nil {
+	if err := globalIAMSys.LoadPolicyMapping(userOrGroup, regularUser, isGroup); err != nil {
 		s.writeErrorResponse(w, err)
 		return
 	}
@@ -254,7 +254,7 @@ func (s *peerRESTServer) LoadUserHandler(w http.ResponseWriter, r *http.Request)
 		userType = stsUser
 	}
 
-	if err = globalIAMSys.LoadUser(objAPI, accessKey, userType); err != nil {
+	if err = globalIAMSys.LoadUser(accessKey, userType); err != nil {
 		s.writeErrorResponse(w, err)
 		return
 	}
@@ -277,7 +277,7 @@ func (s *peerRESTServer) LoadGroupHandler(w http.ResponseWriter, r *http.Request
 
 	vars := mux.Vars(r)
 	group := vars[peerRESTGroup]
-	err := globalIAMSys.LoadGroup(objAPI, group)
+	err := globalIAMSys.LoadGroup(group)
 	if err != nil {
 		s.writeErrorResponse(w, err)
 		return

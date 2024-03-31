@@ -1611,6 +1611,10 @@ func (api objectAPIHandlers) DeleteBucketReplicationConfigHandler(w http.Respons
 	writeSuccessResponseHeadersOnly(w)
 }
 
+func (api objectAPIHandlers) UnsupportedHandler(w http.ResponseWriter, r *http.Request) {
+	writeErrorResponse(newContext(r, w, "UnsupportedHandler"), w, errorCodes.ToAPIErr(ErrNotImplemented), r.URL, guessIsBrowserReq(r))
+}
+
 // GetBucketReplicationMetricsHandler - GET Bucket replication metrics.
 // ----------
 // Gets the replication metrics for a bucket.
