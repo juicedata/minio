@@ -327,8 +327,8 @@ func (sys *IAMSys) LoadPolicy(policyName string) error {
 		return errServerNotInitialized
 	}
 
-	sys.store.lock()
-	defer sys.store.unlock()
+	sys.Lock()
+	defer sys.Unlock()
 
 	return sys.store.loadPolicyDoc(context.Background(), policyName, sys.iamPolicyDocsMap)
 }
@@ -469,7 +469,7 @@ func (sys *IAMSys) Load(ctx context.Context, store IAMStorageAPI) error {
 	iamPolicyDocsMap := make(map[string]iampolicy.Policy)
 
 	isMinIOUsersSys := sys.usersSysType == MinIOUsersSysType
-	sys.store.rlock()
+	sys.Lock()
 	if err := store.loadPolicyDocs(ctx, iamPolicyDocsMap); err != nil {
 		return err
 	}
@@ -509,7 +509,7 @@ func (sys *IAMSys) Load(ctx context.Context, store IAMStorageAPI) error {
 	if err := store.loadMappedPolicies(ctx, stsUser, false, iamUserPolicyMap); err != nil {
 		return err
 	}
-	sys.store.runlock()
+	sys.Unlock()
 
 	sys.Lock()
 	defer sys.Unlock()
@@ -681,6 +681,8 @@ func (sys *IAMSys) DeletePolicy(policyName string) error {
 		return err
 	}
 
+	sys.Lock()
+	defer sys.Unlock()
 	// Delete user-policy mappings that will no longer apply
 	for u, mp := range sys.iamUserPolicyMap {
 		pset := mp.policySet()
@@ -720,9 +722,8 @@ func (sys *IAMSys) InfoPolicy(policyName string) (iampolicy.Policy, error) {
 		return iampolicy.Policy{}, errServerNotInitialized
 	}
 
-	sys.store.rlock()
-	defer sys.store.runlock()
-
+	sys.Lock()
+	defer sys.Unlock()
 	v, ok := sys.iamPolicyDocsMap[policyName]
 	if !ok {
 		return iampolicy.Policy{}, errNoSuchPolicy
@@ -739,8 +740,8 @@ func (sys *IAMSys) ListPolicies() (map[string]iampolicy.Policy, error) {
 
 	<-sys.configLoaded
 
-	sys.store.rlock()
-	defer sys.store.runlock()
+	sys.Lock()
+	defer sys.Unlock()
 
 	policyDocsMap := make(map[string]iampolicy.Policy, len(sys.iamPolicyDocsMap))
 	for k, v := range sys.iamPolicyDocsMap {
@@ -843,8 +844,8 @@ func (sys *IAMSys) CurrentPolicies(policyName string) string {
 		return ""
 	}
 
-	sys.store.rlock()
-	defer sys.store.runlock()
+	sys.Lock()
+	defer sys.Unlock()
 
 	var policies []string
 	mp := newMappedPolicy(policyName)
@@ -911,8 +912,8 @@ func (sys *IAMSys) ListUsers() (map[string]madmin.UserInfo, error) {
 
 	<-sys.configLoaded
 
-	//sys.store.rlock()
-	//defer sys.store.runlock()
+	sys.Lock()
+	defer sys.Unlock()
 
 	var users = make(map[string]madmin.UserInfo)
 
@@ -939,8 +940,8 @@ func (sys *IAMSys) IsTempUser(name string) (bool, string, error) {
 		return false, "", errServerNotInitialized
 	}
 
-	sys.store.rlock()
-	defer sys.store.runlock()
+	sys.Lock()
+	defer sys.Unlock()
 
 	cred, found := sys.iamUsersMap[name]
 	if !found {
@@ -960,8 +961,8 @@ func (sys *IAMSys) IsServiceAccount(name string) (bool, string, error) {
 		return false, "", errServerNotInitialized
 	}
 
-	sys.store.rlock()
-	defer sys.store.runlock()
+	sys.Lock()
+	defer sys.Unlock()
 
 	cred, found := sys.iamUsersMap[name]
 	if !found {
@@ -988,12 +989,12 @@ func (sys *IAMSys) GetUserInfo(name string) (u madmin.UserInfo, err error) {
 	}
 
 	if sys.usersSysType != MinIOUsersSysType {
-		//sys.store.rlock()
+		sys.Lock()
 		// If the user has a mapped policy or is a member of a group, we
 		// return that info. Otherwise we return error.
 		mappedPolicy, ok1 := sys.iamUserPolicyMap[name]
 		memberships, ok2 := sys.iamUserGroupMemberships[name]
-		//sys.store.runlock()
+		//sys.Unlock()
 		if !ok1 && !ok2 {
 			return u, errNoSuchUser
 		}
@@ -1003,8 +1004,8 @@ func (sys *IAMSys) GetUserInfo(name string) (u madmin.UserInfo, err error) {
 		}, nil
 	}
 
-	//sys.store.rlock()
-	//defer sys.store.runlock()
+	sys.Lock()
+	defer sys.Unlock()
 
 	cred, found := sys.iamUsersMap[name]
 	if !found {
@@ -1257,8 +1258,8 @@ func (sys *IAMSys) ListServiceAccounts(ctx context.Context, accessKey string) ([
 
 	<-sys.configLoaded
 
-	//sys.store.rlock()
-	//defer sys.store.runlock()
+	sys.Lock()
+	defer sys.Unlock()
 
 	var serviceAccounts []auth.Credentials
 	for _, v := range sys.iamUsersMap {
@@ -1279,8 +1280,8 @@ func (sys *IAMSys) GetServiceAccount(ctx context.Context, accessKey string) (aut
 		return auth.Credentials{}, nil, errServerNotInitialized
 	}
 
-	//sys.store.rlock()
-	//defer sys.store.runlock()
+	sys.Lock()
+	defer sys.Unlock()
 
 	sa, ok := sys.iamUsersMap[accessKey]
 	if !ok || !sa.IsServiceAccount() {
@@ -1359,10 +1360,13 @@ func (sys *IAMSys) CreateUser(accessKey string, uinfo madmin.UserInfo) error {
 		return err
 	}
 
+	sys.Lock()
 	cr, ok := sys.iamUsersMap[accessKey]
 	if cr.IsTemp() && ok {
+		sys.Unlock()
 		return errIAMActionNotAllowed
 	}
+	sys.Unlock()
 
 	u := newUserIdentity(auth.Credentials{
 		AccessKey: accessKey,
@@ -1430,8 +1434,8 @@ func (sys *IAMSys) SetUserSecretKey(accessKey string, secretKey string) error {
 }
 
 func (sys *IAMSys) loadUserFromStore(accessKey string) {
-	sys.store.rlock()
-	defer sys.store.runlock()
+	sys.Lock()
+	defer sys.Unlock()
 	// If user is already found proceed.
 	if _, found := sys.iamUsersMap[accessKey]; !found {
 		//sys.store.loadUser(context.Background(), accessKey, regularUser, sys.iamUsersMap)
@@ -1482,7 +1486,7 @@ func (sys *IAMSys) GetUser(accessKey string) (cred auth.Credentials, ok bool) {
 		return cred, false
 	}
 
-	sys.store.rlock()
+	sys.Lock()
 	fallback := false
 	select {
 	case <-sys.configLoaded:
@@ -1503,7 +1507,7 @@ func (sys *IAMSys) GetUser(accessKey string) (cred auth.Credentials, ok bool) {
 
 		cred, ok = sys.iamUsersMap[accessKey]
 	}
-	sys.store.runlock()
+	sys.Unlock()
 	if ok && cred.IsValid() {
 		if cred.ParentUser != "" && sys.usersSysType == MinIOUsersSysType {
 			_, ok = sys.iamUsersMap[cred.ParentUser]
@@ -1602,7 +1606,7 @@ func (sys *IAMSys) RemoveUsersFromGroup(group string, members []string) error {
 	// lock all write config action
 	sys.store.lock()
 	defer sys.store.unlock()
-
+	sys.Lock()
 	// update user cache
 	if err := sys.LoadAllTypeUsers(); err != nil {
 		return err
@@ -1739,8 +1743,8 @@ func (sys *IAMSys) GetGroupDescription(group string) (gd madmin.GroupDesc, err e
 		}, nil
 	}
 
-	sys.store.rlock()
-	defer sys.store.runlock()
+	sys.Lock()
+	defer sys.Unlock()
 
 	gi, ok := sys.iamGroupsMap[group]
 	if !ok {
@@ -1767,8 +1771,8 @@ func (sys *IAMSys) ListGroups() (r []string, err error) {
 
 	<-sys.configLoaded
 
-	sys.store.rlock()
-	defer sys.store.runlock()
+	sys.Lock()
+	defer sys.Unlock()
 
 	r = make([]string, 0, len(sys.iamGroupsMap))
 	for k := range sys.iamGroupsMap {
@@ -1865,8 +1869,8 @@ func (sys *IAMSys) PolicyDBGet(name string, isGroup bool, groups ...string) ([]s
 		return nil, errInvalidArgument
 	}
 
-	sys.store.rlock()
-	defer sys.store.runlock()
+	sys.Lock()
+	defer sys.Unlock()
 
 	policies, err := sys.policyDBGet(name, isGroup)
 	if err != nil {
@@ -1990,14 +1994,14 @@ func (sys *IAMSys) IsAllowedServiceAccount(args iampolicy.Args, parent string) b
 	var availablePolicies []iampolicy.Policy
 
 	// Policies were found, evaluate all of them.
-	sys.store.rlock()
+	sys.Lock()
 	for _, pname := range svcPolicies {
 		p, found := sys.iamPolicyDocsMap[pname]
 		if found {
 			availablePolicies = append(availablePolicies, p)
 		}
 	}
-	sys.store.runlock()
+	sys.Unlock()
 
 	if len(availablePolicies) == 0 {
 		return false
@@ -2089,14 +2093,14 @@ func (sys *IAMSys) IsAllowedLDAPSTS(args iampolicy.Args, parentUser string) bool
 	var availablePolicies []iampolicy.Policy
 
 	// Policies were found, evaluate all of them.
-	sys.store.rlock()
+	sys.Lock()
 	for _, pname := range ldapPolicies {
 		p, found := sys.iamPolicyDocsMap[pname]
 		if found {
 			availablePolicies = append(availablePolicies, p)
 		}
 	}
-	sys.store.runlock()
+	sys.Unlock()
 
 	if len(availablePolicies) == 0 {
 		return false
@@ -2134,8 +2138,8 @@ func (sys *IAMSys) IsAllowedSTS(args iampolicy.Args, parentUser string) bool {
 		return false
 	}
 
-	sys.store.rlock()
-	defer sys.store.runlock()
+	sys.Lock()
+	defer sys.Unlock()
 
 	// If policy is available for given user, check the policy.
 	mp, ok := sys.iamUserPolicyMap[args.AccountName]
@@ -2203,8 +2207,8 @@ func (sys *IAMSys) IsAllowedSTS(args iampolicy.Args, parentUser string) bool {
 // GetCombinedPolicy returns a combined policy combining all policies
 func (sys *IAMSys) GetCombinedPolicy(policies ...string) iampolicy.Policy {
 	// Policies were found, evaluate all of them.
-	sys.store.rlock()
-	defer sys.store.runlock()
+	sys.Lock()
+	defer sys.Unlock()
 
 	var availablePolicies []iampolicy.Policy
 	for _, pname := range policies {
