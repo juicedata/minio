@@ -49,7 +49,7 @@ func newIAMObjectStore(objAPI ObjectLayer) *IAMObjectStore {
 }
 
 func (iamOS *IAMObjectStore) lock() {
-	iamOS.objAPI.NewNSLock(MinioMetaBucket, MinioMetaLockFile).GetLock(context.Background(), nil)
+	iamOS.objAPI.NewNSLock(MinioMetaBucket, MinioMetaLockFile).GetLock(context.Background(), globalGetLockConfigTimeout)
 }
 
 func (iamOS *IAMObjectStore) unlock() {
@@ -57,7 +57,7 @@ func (iamOS *IAMObjectStore) unlock() {
 }
 
 func (iamOS *IAMObjectStore) rlock() {
-	iamOS.objAPI.NewNSLock(MinioMetaBucket, MinioMetaLockFile).GetRLock(context.Background(), nil)
+	iamOS.objAPI.NewNSLock(MinioMetaBucket, MinioMetaLockFile).GetRLock(context.Background(), globalGetLockConfigTimeout)
 }
 
 func (iamOS *IAMObjectStore) runlock() {

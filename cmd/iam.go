@@ -514,25 +514,10 @@ func (sys *IAMSys) Load(ctx context.Context, store IAMStorageAPI) error {
 	sys.Lock()
 	defer sys.Unlock()
 
-	//for k, v := range iamPolicyDocsMap {
-	//	sys.iamPolicyDocsMap[k] = v
-	//}
 	sys.iamPolicyDocsMap = iamPolicyDocsMap
-
-	// Merge the new reloaded entries into global map.
-	// See issue https://github.com/minio/minio/issues/9651
-	// where the present list of entries on disk are not yet
-	// latest, there is a small window where this can make
-	// valid users invalid.
-	//for k, v := range iamUsersMap {
-	//	sys.iamUsersMap[k] = v
-	//}
 
 	sys.iamUsersMap = iamUsersMap
 
-	//for k, v := range iamUserPolicyMap {
-	//	sys.iamUserPolicyMap[k] = v
-	//}
 	sys.iamUserPolicyMap = iamUserPolicyMap
 
 	// purge any expired entries which became expired now.
@@ -566,14 +551,7 @@ func (sys *IAMSys) Load(ctx context.Context, store IAMStorageAPI) error {
 		}
 	}
 
-	//for k, v := range iamGroupPolicyMap {
-	//	sys.iamGroupPolicyMap[k] = v
-	//}
 	sys.iamGroupPolicyMap = iamGroupPolicyMap
-
-	//for k, v := range iamGroupsMap {
-	//	sys.iamGroupsMap[k] = v
-	//}
 
 	sys.iamGroupsMap = iamGroupsMap
 
@@ -591,39 +569,39 @@ func (sys *IAMSys) Init(ctx context.Context, objAPI ObjectLayer) {
 	// Initialize IAM store
 	sys.InitStore(objAPI)
 
-	//retryCtx, cancel := context.WithCancel(ctx)
+	retryCtx, cancel := context.WithCancel(ctx)
 
 	// Indicate to our routine to exit cleanly upon return.
-	//defer cancel()
+	defer cancel()
 
 	// Hold the lock for migration only.
-	//txnLk := objAPI.NewNSLock(MinioMetaBucket, minioConfigPrefix+"/iam.lock")
+	txnLk := objAPI.NewNSLock(MinioMetaBucket, MinioMetaLockFile)
 
 	// allocate dynamic timeout once before the loop
-	//iamLockTimeout := newDynamicTimeout(5*time.Second, 3*time.Second)
+	iamLockTimeout := newDynamicTimeout(5*time.Second, 3*time.Second)
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	for {
 		// let one of the server acquire the lock, if not let them timeout.
 		// which shall be retried again by this loop.
-		//if _, err := txnLk.GetLock(retryCtx, iamLockTimeout); err != nil {
-		//	logger.Info("Waiting for all MinIO IAM sub-system to be initialized.. trying to acquire lock")
-		//	time.Sleep(time.Duration(r.Float64() * float64(5*time.Second)))
-		//	continue
-		//}
-		//
-		//if globalEtcdClient != nil {
-		//}
-		//
-		//// These messages only meant primarily for distributed setup, so only log during distributed setup.
-		//if globalIsDistErasure {
-		//	logger.Info("Waiting for all MinIO IAM sub-system to be initialized.. lock acquired")
-		//}
+		if _, err := txnLk.GetLock(retryCtx, iamLockTimeout); err != nil {
+			logger.Info("Waiting for all MinIO IAM sub-system to be initialized.. trying to acquire lock")
+			time.Sleep(time.Duration(r.Float64() * float64(5*time.Second)))
+			continue
+		}
+
+		if globalEtcdClient != nil {
+		}
+
+		// These messages only meant primarily for distributed setup, so only log during distributed setup.
+		if globalIsDistErasure {
+			logger.Info("Waiting for all MinIO IAM sub-system to be initialized.. lock acquired")
+		}
 
 		// Migrate IAM configuration, if necessary.
 		if err := sys.doIAMConfigMigration(ctx); err != nil {
-			//txnLk.Unlock()
+			txnLk.Unlock()
 			if errors.Is(err, madmin.ErrMaliciousData) {
 				logger.Fatal(err, "Unable to read encrypted IAM configuration. Please check your credentials.")
 			}
@@ -637,7 +615,7 @@ func (sys *IAMSys) Init(ctx context.Context, objAPI ObjectLayer) {
 		}
 
 		// Successfully migrated, proceed to load the users.
-		//txnLk.Unlock()
+		txnLk.Unlock()
 		break
 	}
 
