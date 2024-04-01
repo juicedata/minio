@@ -37,6 +37,7 @@ import (
 
 // IAMObjectStore implements IAMStorageAPI
 type IAMObjectStore struct {
+	rwLock RWLocker
 	objAPI ObjectLayer
 }
 
@@ -45,23 +46,23 @@ func (iamOS *IAMObjectStore) newNSLock(bucket string, objects ...string) RWLocke
 }
 
 func newIAMObjectStore(objAPI ObjectLayer) *IAMObjectStore {
-	return &IAMObjectStore{objAPI: objAPI}
+	return &IAMObjectStore{objAPI: objAPI, rwLock: objAPI.NewNSLock(MinioMetaBucket, MinioMetaLockFile)}
 }
 
 func (iamOS *IAMObjectStore) lock() {
-	iamOS.objAPI.NewNSLock(MinioMetaBucket, MinioMetaLockFile).GetLock(context.Background(), globalGetLockConfigTimeout)
+	iamOS.rwLock.GetLock(context.Background(), globalGetLockConfigTimeout)
 }
 
 func (iamOS *IAMObjectStore) unlock() {
-	iamOS.objAPI.NewNSLock(MinioMetaBucket, MinioMetaLockFile).Unlock()
+	iamOS.rwLock.Unlock()
 }
 
 func (iamOS *IAMObjectStore) rlock() {
-	iamOS.objAPI.NewNSLock(MinioMetaBucket, MinioMetaLockFile).GetRLock(context.Background(), globalGetLockConfigTimeout)
+	iamOS.rwLock.GetRLock(context.Background(), globalGetLockConfigTimeout)
 }
 
 func (iamOS *IAMObjectStore) runlock() {
-	iamOS.objAPI.NewNSLock(MinioMetaBucket, MinioMetaLockFile).Unlock()
+	iamOS.rwLock.Unlock()
 }
 
 // Migrate users directory in a single scan.
