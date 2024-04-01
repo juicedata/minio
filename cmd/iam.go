@@ -469,7 +469,7 @@ func (sys *IAMSys) Load(ctx context.Context, store IAMStorageAPI) error {
 	iamPolicyDocsMap := make(map[string]iampolicy.Policy)
 
 	isMinIOUsersSys := sys.usersSysType == MinIOUsersSysType
-	sys.Lock()
+	sys.store.rlock()
 	if err := store.loadPolicyDocs(ctx, iamPolicyDocsMap); err != nil {
 		return err
 	}
@@ -509,7 +509,7 @@ func (sys *IAMSys) Load(ctx context.Context, store IAMStorageAPI) error {
 	if err := store.loadMappedPolicies(ctx, stsUser, false, iamUserPolicyMap); err != nil {
 		return err
 	}
-	sys.Unlock()
+	sys.store.runlock()
 
 	sys.Lock()
 	defer sys.Unlock()
