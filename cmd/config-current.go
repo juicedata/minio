@@ -133,31 +133,6 @@ func initHelp() {
 			MultipleTargets: true,
 		},
 		config.HelpKV{
-			Key:             config.NotifyAMQPSubSys,
-			Description:     "publish bucket notifications to AMQP endpoints",
-			MultipleTargets: true,
-		},
-		config.HelpKV{
-			Key:             config.NotifyKafkaSubSys,
-			Description:     "publish bucket notifications to Kafka endpoints",
-			MultipleTargets: true,
-		},
-		config.HelpKV{
-			Key:             config.NotifyMQTTSubSys,
-			Description:     "publish bucket notifications to MQTT endpoints",
-			MultipleTargets: true,
-		},
-		config.HelpKV{
-			Key:             config.NotifyNATSSubSys,
-			Description:     "publish bucket notifications to NATS endpoints",
-			MultipleTargets: true,
-		},
-		config.HelpKV{
-			Key:             config.NotifyNSQSubSys,
-			Description:     "publish bucket notifications to NSQ endpoints",
-			MultipleTargets: true,
-		},
-		config.HelpKV{
 			Key:             config.NotifyMySQLSubSys,
 			Description:     "publish bucket notifications to MySQL databases",
 			MultipleTargets: true,
@@ -165,11 +140,6 @@ func initHelp() {
 		config.HelpKV{
 			Key:             config.NotifyPostgresSubSys,
 			Description:     "publish bucket notifications to Postgres databases",
-			MultipleTargets: true,
-		},
-		config.HelpKV{
-			Key:             config.NotifyESSubSys,
-			Description:     "publish bucket notifications to Elasticsearch endpoints",
 			MultipleTargets: true,
 		},
 		config.HelpKV{
@@ -202,16 +172,10 @@ func initHelp() {
 		config.PolicyOPASubSys:      opa.Help,
 		config.LoggerWebhookSubSys:  logger.Help,
 		config.AuditWebhookSubSys:   logger.HelpAudit,
-		config.NotifyAMQPSubSys:     notify.HelpAMQP,
-		config.NotifyKafkaSubSys:    notify.HelpKafka,
-		config.NotifyMQTTSubSys:     notify.HelpMQTT,
-		config.NotifyNATSSubSys:     notify.HelpNATS,
-		config.NotifyNSQSubSys:      notify.HelpNSQ,
 		config.NotifyMySQLSubSys:    notify.HelpMySQL,
 		config.NotifyPostgresSubSys: notify.HelpPostgres,
 		config.NotifyRedisSubSys:    notify.HelpRedis,
 		config.NotifyWebhookSubSys:  notify.HelpWebhook,
-		config.NotifyESSubSys:       notify.HelpES,
 	}
 
 	config.RegisterHelpSubSys(helpMap)
@@ -275,7 +239,6 @@ func validateConfig(s config.Config, setDriveCounts []int) error {
 	if _, err = scanner.LookupConfig(s[config.ScannerSubSys][config.Default]); err != nil {
 		return err
 	}
-
 
 	if _, err := openid.LookupConfig(s[config.IdentityOpenIDSubSys][config.Default],
 		NewGatewayHTTPTransport(), xhttp.DrainBody); err != nil {
