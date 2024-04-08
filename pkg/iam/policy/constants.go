@@ -66,24 +66,6 @@ var WriteOnly = Policy{
 	},
 }
 
-// AdminDiagnostics - provides admin diagnostics access.
-var AdminDiagnostics = Policy{
-	Version: DefaultVersion,
-	Statements: []Statement{
-		{
-			SID:    policy.ID(""),
-			Effect: policy.Allow,
-			Actions: NewActionSet(ProfilingAdminAction,
-				TraceAdminAction, ConsoleLogAdminAction,
-				ServerInfoAdminAction, TopLocksAdminAction,
-				HealthInfoAdminAction, BandwidthMonitorAction,
-				PrometheusAdminAction,
-			),
-			Resources: NewResourceSet(NewResource("*", "")),
-		},
-	},
-}
-
 // Admin - provides admin all-access canned policy
 var Admin = Policy{
 	Version: DefaultVersion,
