@@ -91,7 +91,7 @@ func loadHealingTracker(ctx context.Context, disk StorageAPI) (*healingTracker, 
 		return nil, err
 	}
 	b, err := disk.ReadAll(ctx, MinioMetaBucket,
-		pathJoin(bucketMetaPrefix, slashSeparator, healingTrackerFilename))
+		pathJoin(BucketMetaPrefix, slashSeparator, healingTrackerFilename))
 	if err != nil {
 		return nil, err
 	}
@@ -152,14 +152,14 @@ func (h *healingTracker) save(ctx context.Context) error {
 	}
 	globalBackgroundHealState.updateHealStatus(h)
 	return h.disk.WriteAll(ctx, MinioMetaBucket,
-		pathJoin(bucketMetaPrefix, slashSeparator, healingTrackerFilename),
+		pathJoin(BucketMetaPrefix, slashSeparator, healingTrackerFilename),
 		htrackerBytes)
 }
 
 // delete the tracker on disk.
 func (h *healingTracker) delete(ctx context.Context) error {
 	return h.disk.Delete(ctx, MinioMetaBucket,
-		pathJoin(bucketMetaPrefix, slashSeparator, healingTrackerFilename),
+		pathJoin(BucketMetaPrefix, slashSeparator, healingTrackerFilename),
 		false)
 }
 
@@ -378,7 +378,7 @@ func monitorLocalDisksAndHeal(ctx context.Context, z *erasureServerPools, bgSeq 
 			// Buckets data are dispersed in multiple zones/sets, make
 			// sure to heal all bucket metadata configuration.
 			buckets = append(buckets, []BucketInfo{
-				{Name: pathJoin(MinioMetaBucket, bucketMetaPrefix)},
+				{Name: pathJoin(MinioMetaBucket, BucketMetaPrefix)},
 			}...)
 
 			// Heal latest buckets first.

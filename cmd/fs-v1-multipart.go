@@ -715,7 +715,7 @@ func (fs *FSObjects) CompleteMultipartUpload(ctx context.Context, bucket string,
 	}
 	defer destLock.Unlock()
 
-	bucketMetaDir := pathJoin(fs.fsPath, MinioMetaBucket, bucketMetaPrefix)
+	bucketMetaDir := pathJoin(fs.fsPath, MinioMetaBucket, BucketMetaPrefix)
 	fsMetaPath := pathJoin(bucketMetaDir, bucket, object, fs.metaJSONFile)
 	metaFile, err := fs.rwPool.Write(fsMetaPath)
 	var freshFile bool

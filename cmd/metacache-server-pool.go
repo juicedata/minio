@@ -34,7 +34,7 @@ import (
 func renameAllBucketMetacache(epPath string) error {
 	// Rename all previous `.minio.sys/buckets/<bucketname>/.metacache` to
 	// to `.minio.sys/tmp/` for deletion.
-	return readDirFn(pathJoin(epPath, MinioMetaBucket, bucketMetaPrefix), func(name string, typ os.FileMode) error {
+	return readDirFn(pathJoin(epPath, MinioMetaBucket, BucketMetaPrefix), func(name string, typ os.FileMode) error {
 		if typ == os.ModeDir {
 			tmpMetacacheOld := pathutil.Join(epPath, minioMetaTmpDeletedBucket, mustGetUUID())
 			if err := renameAll(pathJoin(epPath, MinioMetaBucket, metacachePrefixForID(name, slashSeparator)),

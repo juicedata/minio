@@ -39,7 +39,7 @@ const (
 	blockSizeV2 = 1 * humanize.MiByte
 
 	// Buckets meta prefix.
-	bucketMetaPrefix = "buckets"
+	BucketMetaPrefix = "buckets"
 
 	// ETag (hex encoded md5sum) of empty string.
 	emptyETag = "d41d8cd98f00b204e9800998ecf8427e"

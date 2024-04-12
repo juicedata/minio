@@ -30,7 +30,7 @@ import (
 
 const (
 	dataUsageRoot   = SlashSeparator
-	dataUsageBucket = MinioMetaBucket + SlashSeparator + bucketMetaPrefix
+	dataUsageBucket = MinioMetaBucket + SlashSeparator + BucketMetaPrefix
 
 	dataUsageObjName   = ".usage.json"
 	dataUsageCacheName = ".usage-cache.bin"

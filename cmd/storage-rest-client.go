@@ -187,7 +187,7 @@ func (client *storageRESTClient) Healing() *healingTracker {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			b, err := client.ReadAll(ctx, MinioMetaBucket,
-				pathJoin(bucketMetaPrefix, healingTrackerFilename))
+				pathJoin(BucketMetaPrefix, healingTrackerFilename))
 			if err != nil {
 				// If error, likely not healing.
 				return (*healingTracker)(nil), nil

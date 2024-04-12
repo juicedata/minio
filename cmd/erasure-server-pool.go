@@ -573,7 +573,7 @@ func (z *erasureServerPools) MakeBucketWithLocation(ctx context.Context, bucket 
 	}
 
 	// If it doesn't exist we get a new, so ignore errors
-	meta := newBucketMetadata(bucket)
+	meta := NewBucketMetadata(bucket)
 	if opts.LockEnabled {
 		meta.VersioningConfigXML = enabledBucketVersioningConfig
 		meta.ObjectLockConfigXML = enabledBucketObjectLockConfig
@@ -1417,7 +1417,7 @@ func (z *erasureServerPools) HealBucket(ctx context.Context, bucket string, opts
 	}
 
 	// Attempt heal on the bucket metadata, ignore any failures
-	_, _ = z.HealObject(ctx, MinioMetaBucket, pathJoin(bucketConfigPrefix, bucket, bucketMetadataFile), "", opts)
+	_, _ = z.HealObject(ctx, MinioMetaBucket, pathJoin(bucketConfigPrefix, bucket, BucketMetadataFile), "", opts)
 
 	for _, pool := range z.serverPools {
 		result, err := pool.HealBucket(ctx, bucket, opts)

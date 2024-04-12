@@ -48,7 +48,7 @@ const (
 	legacyBucketObjectLockEnabledConfigFile = "object-lock-enabled.json"
 	legacyBucketObjectLockEnabledConfig     = `{"x-amz-bucket-object-lock-enabled":true}`
 
-	bucketMetadataFile    = ".metadata.bin"
+	BucketMetadataFile    = ".metadata.bin"
 	bucketMetadataFormat  = 1
 	bucketMetadataVersion = 1
 )
@@ -96,7 +96,7 @@ type BucketMetadata struct {
 }
 
 // newBucketMetadata creates BucketMetadata with the supplied name and Created to Now.
-func newBucketMetadata(name string) BucketMetadata {
+func NewBucketMetadata(name string) BucketMetadata {
 	return BucketMetadata{
 		Name:    name,
 		Created: UTCNow(),
@@ -119,7 +119,7 @@ func (b *BucketMetadata) Load(ctx context.Context, api ObjectLayer, name string)
 		logger.LogIf(ctx, errors.New("bucket name cannot be empty"))
 		return errors.New("bucket name cannot be empty")
 	}
-	configFile := path.Join(bucketConfigPrefix, name, bucketMetadataFile)
+	configFile := path.Join(bucketConfigPrefix, name, BucketMetadataFile)
 	data, err := readConfig(ctx, api, configFile)
 	if err != nil {
 		return err
@@ -146,7 +146,7 @@ func (b *BucketMetadata) Load(ctx context.Context, api ObjectLayer, name string)
 
 // LoadBucketMetadata loads and migrates to bucket metadata.
 func LoadBucketMetadata(ctx context.Context, objectAPI ObjectLayer, bucket string) (BucketMetadata, error) {
-	b := newBucketMetadata(bucket)
+	b := NewBucketMetadata(bucket)
 	err := b.Load(ctx, objectAPI, b.Name)
 	if err != nil && !errors.Is(err, errConfigNotFound) {
 		return b, err
@@ -364,7 +364,7 @@ func (b *BucketMetadata) Save(ctx context.Context, api ObjectLayer) error {
 		return err
 	}
 
-	configFile := path.Join(bucketConfigPrefix, b.Name, bucketMetadataFile)
+	configFile := path.Join(bucketConfigPrefix, b.Name, BucketMetadataFile)
 	return saveConfig(ctx, api, configFile, data)
 }
 
@@ -373,7 +373,7 @@ func (b *BucketMetadata) Save(ctx context.Context, api ObjectLayer) error {
 func deleteBucketMetadata(ctx context.Context, obj objectDeleter, bucket string) error {
 	metadataFiles := []string{
 		dataUsageCacheName,
-		bucketMetadataFile,
+		BucketMetadataFile,
 	}
 	for _, metaFile := range metadataFiles {
 		configFile := path.Join(bucketConfigPrefix, bucket, metaFile)

@@ -365,7 +365,7 @@ func (s *xlStorage) SetDiskLoc(poolIdx, setIdx, diskIdx int) {
 
 func (s *xlStorage) Healing() *healingTracker {
 	healingFile := pathJoin(s.diskPath, MinioMetaBucket,
-		bucketMetaPrefix, healingTrackerFilename)
+		BucketMetaPrefix, healingTrackerFilename)
 	b, err := ioutil.ReadFile(healingFile)
 	if err != nil {
 		return nil

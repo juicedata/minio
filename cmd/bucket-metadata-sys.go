@@ -202,7 +202,7 @@ func (sys *BucketMetadataSys) Update(bucket string, configFile string, configDat
 // calls implemented specifically for each of those features.
 func (sys *BucketMetadataSys) Get(bucket string) (BucketMetadata, error) {
 	if globalIsGateway || bucket == MinioMetaBucket {
-		return newBucketMetadata(bucket), errConfigNotFound
+		return NewBucketMetadata(bucket), errConfigNotFound
 	}
 
 	sys.RLock()
@@ -210,7 +210,7 @@ func (sys *BucketMetadataSys) Get(bucket string) (BucketMetadata, error) {
 
 	meta, ok := sys.metadataMap[bucket]
 	if !ok {
-		return newBucketMetadata(bucket), errConfigNotFound
+		return NewBucketMetadata(bucket), errConfigNotFound
 	}
 
 	return meta, nil
@@ -396,15 +396,15 @@ func (sys *BucketMetadataSys) GetBucketTarget(bucket string, arn string) (madmin
 func (sys *BucketMetadataSys) GetConfig(bucket string) (BucketMetadata, error) {
 	objAPI := newObjectLayerFn()
 	if objAPI == nil {
-		return newBucketMetadata(bucket), errServerNotInitialized
+		return NewBucketMetadata(bucket), errServerNotInitialized
 	}
 
 	if globalIsGateway {
-		return newBucketMetadata(bucket), NotImplemented{}
+		return NewBucketMetadata(bucket), NotImplemented{}
 	}
 
 	if bucket == MinioMetaBucket {
-		return newBucketMetadata(bucket), errInvalidArgument
+		return NewBucketMetadata(bucket), errInvalidArgument
 	}
 
 	sys.RLock()

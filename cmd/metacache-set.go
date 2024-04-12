@@ -267,7 +267,7 @@ func getMetacacheBlockInfo(fi FileInfo, block int) (*metacacheBlock, error) {
 const metacachePrefix = ".metacache"
 
 func metacachePrefixForID(bucket, id string) string {
-	return pathJoin(bucketMetaPrefix, bucket, metacachePrefix, id)
+	return pathJoin(BucketMetaPrefix, bucket, metacachePrefix, id)
 }
 
 // objectPath returns the object path of the cache.
