@@ -285,8 +285,9 @@ func guessIsLoginSTSReq(req *http.Request) bool {
 func setReservedBucketHandler(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// For all other requests reject access to reserved buckets
-		bucketName, _ := request2BucketObjectName(r)
-		if isMinioReservedBucket(bucketName) || isMinioMetaBucket(bucketName) {
+		bucketName, objectName := request2BucketObjectName(r)
+		// Fix permissions on metadata buckets in single bucket mode
+		if isMinioReservedBucket(bucketName) || isMinioMetaBucket(bucketName) || strings.HasPrefix(objectName, MinioMetaBucket) || strings.HasPrefix(r.URL.Query().Get("prefix"), MinioMetaBucket) {
 			if !guessIsRPCReq(r) && !guessIsBrowserReq(r) && !guessIsHealthCheckReq(r) && !guessIsMetricsReq(r) && !isAdminReq(r) {
 				writeErrorResponse(r.Context(), w, errorCodes.ToAPIErr(ErrAllAccessDisabled), r.URL, guessIsBrowserReq(r))
 				return
