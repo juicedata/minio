@@ -62,7 +62,7 @@ func (iamOS *IAMObjectStore) rlock() {
 }
 
 func (iamOS *IAMObjectStore) runlock() {
-	iamOS.rwLock.Unlock()
+	iamOS.rwLock.RUnlock()
 }
 
 // Migrate users directory in a single scan.
