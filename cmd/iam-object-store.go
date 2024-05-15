@@ -50,7 +50,11 @@ func newIAMObjectStore(objAPI ObjectLayer) *IAMObjectStore {
 }
 
 func (iamOS *IAMObjectStore) lock() {
-	iamOS.rwLock.GetLock(context.Background(), globalGetLockConfigTimeout)
+	for {
+		if _, err := iamOS.rwLock.GetLock(context.Background(), globalGetLockConfigTimeout); err == nil {
+			return
+		}
+	}
 }
 
 func (iamOS *IAMObjectStore) unlock() {
@@ -58,7 +62,11 @@ func (iamOS *IAMObjectStore) unlock() {
 }
 
 func (iamOS *IAMObjectStore) rlock() {
-	iamOS.rwLock.GetRLock(context.Background(), globalGetLockConfigTimeout)
+	for {
+		if _, err := iamOS.rwLock.GetRLock(context.Background(), globalGetLockConfigTimeout); err == nil {
+			return
+		}
+	}
 }
 
 func (iamOS *IAMObjectStore) runlock() {
