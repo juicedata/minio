@@ -26,7 +26,7 @@ import (
 
 func TestDynamicTimeoutSingleIncrease(t *testing.T) {
 
-	timeout := newDynamicTimeout(time.Minute, time.Second)
+	timeout := NewDynamicTimeout(time.Minute, time.Second)
 
 	initial := timeout.Timeout()
 
@@ -43,7 +43,7 @@ func TestDynamicTimeoutSingleIncrease(t *testing.T) {
 
 func TestDynamicTimeoutDualIncrease(t *testing.T) {
 
-	timeout := newDynamicTimeout(time.Minute, time.Second)
+	timeout := NewDynamicTimeout(time.Minute, time.Second)
 
 	initial := timeout.Timeout()
 
@@ -66,7 +66,7 @@ func TestDynamicTimeoutDualIncrease(t *testing.T) {
 
 func TestDynamicTimeoutSingleDecrease(t *testing.T) {
 
-	timeout := newDynamicTimeout(time.Minute, time.Second)
+	timeout := NewDynamicTimeout(time.Minute, time.Second)
 
 	initial := timeout.Timeout()
 
@@ -83,7 +83,7 @@ func TestDynamicTimeoutSingleDecrease(t *testing.T) {
 
 func TestDynamicTimeoutDualDecrease(t *testing.T) {
 
-	timeout := newDynamicTimeout(time.Minute, time.Second)
+	timeout := NewDynamicTimeout(time.Minute, time.Second)
 
 	initial := timeout.Timeout()
 
@@ -106,7 +106,7 @@ func TestDynamicTimeoutDualDecrease(t *testing.T) {
 
 func TestDynamicTimeoutManyDecreases(t *testing.T) {
 
-	timeout := newDynamicTimeout(time.Minute, time.Second)
+	timeout := NewDynamicTimeout(time.Minute, time.Second)
 
 	initial := timeout.Timeout()
 
@@ -127,7 +127,7 @@ func TestDynamicTimeoutManyDecreases(t *testing.T) {
 
 func TestDynamicTimeoutConcurrent(t *testing.T) {
 	// Race test.
-	timeout := newDynamicTimeout(time.Second, time.Millisecond)
+	timeout := NewDynamicTimeout(time.Second, time.Millisecond)
 	var wg sync.WaitGroup
 	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
 		wg.Add(1)
@@ -152,7 +152,7 @@ func TestDynamicTimeoutConcurrent(t *testing.T) {
 func TestDynamicTimeoutHitMinimum(t *testing.T) {
 
 	const minimum = 30 * time.Second
-	timeout := newDynamicTimeout(time.Minute, minimum)
+	timeout := NewDynamicTimeout(time.Minute, minimum)
 
 	initial := timeout.Timeout()
 
@@ -192,7 +192,7 @@ func testDynamicTimeoutAdjust(t *testing.T, timeout *DynamicTimeout, f func() fl
 
 func TestDynamicTimeoutAdjustExponential(t *testing.T) {
 
-	timeout := newDynamicTimeout(time.Minute, time.Second)
+	timeout := NewDynamicTimeout(time.Minute, time.Second)
 
 	rand.Seed(0)
 
@@ -212,7 +212,7 @@ func TestDynamicTimeoutAdjustExponential(t *testing.T) {
 
 func TestDynamicTimeoutAdjustNormalized(t *testing.T) {
 
-	timeout := newDynamicTimeout(time.Minute, time.Second)
+	timeout := NewDynamicTimeout(time.Minute, time.Second)
 
 	rand.Seed(0)
 

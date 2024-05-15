@@ -1351,7 +1351,7 @@ func (a adminAPIHandlers) HealthInfoHandler(w http.ResponseWriter, r *http.Reque
 
 	var err error
 	nsLock := objectAPI.NewNSLock(MinioMetaBucket, MinioMetaLockFile)
-	ctx, err = nsLock.GetLock(ctx, newDynamicTimeout(deadline, deadline))
+	ctx, err = nsLock.GetLock(ctx, NewDynamicTimeout(deadline, deadline))
 	if err != nil { // returns a locked lock
 		errResp(err)
 		return

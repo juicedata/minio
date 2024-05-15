@@ -68,7 +68,7 @@ USAGE:
 DIR:
   DIR points to a directory on a filesystem. When you want to combine
   multiple drives into a single large system, pass one directory per
-  filesystem separated by space. You may also use a '...' convention
+  file system separated by space. You may also use a '...' convention
   to abbreviate the directory arguments. Remote directories in a
   distributed setup are encoded as HTTP(s) URIs.
 {{if .VisibleFlags}}
@@ -262,7 +262,7 @@ func initServer(ctx context.Context, newObject ObjectLayer) error {
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	lockTimeout := newDynamicTimeout(5*time.Second, 3*time.Second)
+	lockTimeout := NewDynamicTimeout(5*time.Second, 3*time.Second)
 
 	var err error
 	for {

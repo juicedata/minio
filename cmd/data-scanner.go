@@ -56,7 +56,7 @@ var (
 	globalHealConfig   heal.Config
 	globalHealConfigMu sync.Mutex
 
-	dataScannerLeaderLockTimeout = newDynamicTimeout(30*time.Second, 10*time.Second)
+	dataScannerLeaderLockTimeout = NewDynamicTimeout(30*time.Second, 10*time.Second)
 	// Sleeper values are updated when config is loaded.
 	scannerSleeper = newDynamicSleeper(10, 10*time.Second)
 	scannerCycle   = &safeDuration{}

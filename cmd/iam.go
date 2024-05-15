@@ -575,7 +575,7 @@ func (sys *IAMSys) Init(ctx context.Context, objAPI ObjectLayer) {
 	txnLk := objAPI.NewNSLock(MinioMetaBucket, MinioMetaLockFile)
 
 	// allocate dynamic timeout once before the loop
-	iamLockTimeout := newDynamicTimeout(5*time.Second, 3*time.Second)
+	iamLockTimeout := NewDynamicTimeout(5*time.Second, 3*time.Second)
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 

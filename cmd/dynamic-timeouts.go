@@ -40,10 +40,10 @@ type DynamicTimeout struct {
 	mutex   sync.Mutex
 }
 
-// newDynamicTimeout returns a new dynamic timeout initialized with timeout value
-func newDynamicTimeout(timeout, minimum time.Duration) *DynamicTimeout {
+// NewDynamicTimeout returns a new dynamic timeout initialized with timeout value
+func NewDynamicTimeout(timeout, minimum time.Duration) *DynamicTimeout {
 	if timeout <= 0 || minimum <= 0 {
-		panic("newDynamicTimeout: negative or zero timeout")
+		panic("NewDynamicTimeout: negative or zero timeout")
 	}
 	if minimum > timeout {
 		minimum = timeout
