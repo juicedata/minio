@@ -772,13 +772,17 @@ func (s *xlStorage) WalkVersions(ctx context.Context, volume, dirPath, marker st
 	ch = make(chan FileInfoVersions)
 	go func() {
 		defer close(ch)
-		listDir := func(volume, dirPath, dirEntry string) (emptyDir bool, entries []string, delayIsLeaf bool) {
-			entries, err := s.ListDir(ctx, volume, dirPath, -1)
+		listDir := func(volume, dirPath, dirEntry string) (emptyDir bool, entries []*Entry, delayIsLeaf bool) {
+			names, err := s.ListDir(ctx, volume, dirPath, -1)
 			if err != nil {
 				return false, nil, false
 			}
-			if len(entries) == 0 {
+			if len(names) == 0 {
 				return true, nil, false
+			}
+			entries = make([]*Entry, len(names))
+			for i, name := range names {
+				entries[i] = &Entry{Name: name}
 			}
 			entries, delayIsLeaf = filterListEntries(volume, dirPath, entries, dirEntry, s.isLeaf)
 			return false, entries, delayIsLeaf
@@ -787,26 +791,26 @@ func (s *xlStorage) WalkVersions(ctx context.Context, volume, dirPath, marker st
 		walkResultCh := startTreeWalk(GlobalContext, volume, dirPath, marker, recursive, listDir, s.isLeaf, s.isLeafDir, endWalkCh)
 		for walkResult := range walkResultCh {
 			var fiv FileInfoVersions
-			if HasSuffix(walkResult.entry, SlashSeparator) {
+			if HasSuffix(walkResult.entry.Name, SlashSeparator) {
 				fiv = FileInfoVersions{
 					Volume:     volume,
-					Name:       walkResult.entry,
+					Name:       walkResult.entry.Name,
 					IsEmptyDir: walkResult.isEmptyDir,
 					Versions: []FileInfo{
 						{
 							Volume: volume,
-							Name:   walkResult.entry,
+							Name:   walkResult.entry.Name,
 							Mode:   uint32(os.ModeDir),
 						},
 					},
 				}
 			} else {
-				xlMetaBuf, err := ioutil.ReadFile(pathJoin(volumeDir, walkResult.entry, xlStorageFormatFile))
+				xlMetaBuf, err := ioutil.ReadFile(pathJoin(volumeDir, walkResult.entry.Name, xlStorageFormatFile))
 				if err != nil {
 					continue
 				}
 
-				fiv, err = getFileInfoVersions(xlMetaBuf, volume, walkResult.entry)
+				fiv, err = getFileInfoVersions(xlMetaBuf, volume, walkResult.entry.Name)
 				if err != nil {
 					continue
 				}

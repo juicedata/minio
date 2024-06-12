@@ -145,7 +145,7 @@ func cleanupDir(ctx context.Context, storage StorageAPI, volume, dirPath string)
 	return err
 }
 
-func listObjectsNonSlash(ctx context.Context, bucket, prefix, marker, delimiter string, maxKeys int, tpool *TreeWalkPool, listDir ListDirFunc, isLeaf IsLeafFunc, isLeafDir IsLeafDirFunc, getObjInfo func(context.Context, string, string) (ObjectInfo, error), getObjectInfoDirs ...func(context.Context, string, string) (ObjectInfo, error)) (loi ListObjectsInfo, err error) {
+func listObjectsNonSlash(ctx context.Context, bucket, prefix, marker, delimiter string, maxKeys int, tpool *TreeWalkPool, listDir ListDirFunc, isLeaf IsLeafFunc, isLeafDir IsLeafDirFunc, getObjInfo func(context.Context, string, string, *ObjectInfo) (ObjectInfo, error), getObjectInfoDirs ...func(context.Context, string, string, *ObjectInfo) (ObjectInfo, error)) (loi ListObjectsInfo, err error) {
 	endWalkCh := make(chan struct{})
 	defer close(endWalkCh)
 	recursive := true
@@ -168,9 +168,9 @@ func listObjectsNonSlash(ctx context.Context, bucket, prefix, marker, delimiter 
 		var objInfo ObjectInfo
 		var err error
 
-		index := strings.Index(strings.TrimPrefix(result.entry, prefix), delimiter)
+		index := strings.Index(strings.TrimPrefix(result.entry.Name, prefix), delimiter)
 		if index == -1 {
-			objInfo, err = getObjInfo(ctx, bucket, result.entry)
+			objInfo, err = getObjInfo(ctx, bucket, result.entry.Name, result.entry.Info)
 			if err != nil {
 				// Ignore errFileNotFound as the object might have got
 				// deleted in the interim period of listing and getObjectInfo(),
@@ -188,7 +188,7 @@ func listObjectsNonSlash(ctx context.Context, bucket, prefix, marker, delimiter 
 			}
 		} else {
 			index = len(prefix) + index + len(delimiter)
-			currPrefix := result.entry[:index]
+			currPrefix := result.entry.Name[:index]
 			if currPrefix == prevPrefix {
 				continue
 			}
@@ -236,7 +236,7 @@ func listObjectsNonSlash(ctx context.Context, bucket, prefix, marker, delimiter 
 // to allocate a receive channel for ObjectInfo, upon any unhandled
 // error walker returns error. Optionally if context.Done() is received
 // then Walk() stops the walker.
-func FsWalk(ctx context.Context, obj ObjectLayer, bucket, prefix string, listDir ListDirFunc, isLeaf IsLeafFunc, isLeafDir IsLeafDirFunc, results chan<- ObjectInfo, getObjInfo func(context.Context, string, string) (ObjectInfo, error), getObjectInfoDirs ...func(context.Context, string, string) (ObjectInfo, error)) error {
+func FsWalk(ctx context.Context, obj ObjectLayer, bucket, prefix string, listDir ListDirFunc, isLeaf IsLeafFunc, isLeafDir IsLeafDirFunc, results chan<- ObjectInfo, getObjInfo func(context.Context, string, string, *ObjectInfo) (ObjectInfo, error), getObjectInfoDirs ...func(context.Context, string, string, *ObjectInfo) (ObjectInfo, error)) error {
 	if err := checkListObjsArgs(ctx, bucket, prefix, "", obj); err != nil {
 		// Upon error close the channel.
 		close(results)
@@ -256,9 +256,9 @@ func FsWalk(ctx context.Context, obj ObjectLayer, bucket, prefix string, listDir
 
 			var objInfo ObjectInfo
 			var err error
-			if HasSuffix(walkResult.entry, SlashSeparator) {
+			if HasSuffix(walkResult.entry.Name, SlashSeparator) {
 				for _, getObjectInfoDir := range getObjectInfoDirs {
-					objInfo, err = getObjectInfoDir(ctx, bucket, walkResult.entry)
+					objInfo, err = getObjectInfoDir(ctx, bucket, walkResult.entry.Name, walkResult.entry.Info)
 					if err == nil {
 						break
 					}
@@ -266,13 +266,13 @@ func FsWalk(ctx context.Context, obj ObjectLayer, bucket, prefix string, listDir
 						err = nil
 						objInfo = ObjectInfo{
 							Bucket: bucket,
-							Name:   walkResult.entry,
+							Name:   walkResult.entry.Name,
 							IsDir:  true,
 						}
 					}
 				}
 			} else {
-				objInfo, err = getObjInfo(ctx, bucket, walkResult.entry)
+				objInfo, err = getObjInfo(ctx, bucket, walkResult.entry.Name, walkResult.entry.Info)
 			}
 			if err != nil {
 				continue
@@ -286,7 +286,7 @@ func FsWalk(ctx context.Context, obj ObjectLayer, bucket, prefix string, listDir
 	return nil
 }
 
-func listObjects(ctx context.Context, obj ObjectLayer, bucket, prefix, marker, delimiter string, maxKeys int, tpool *TreeWalkPool, listDir ListDirFunc, isLeaf IsLeafFunc, isLeafDir IsLeafDirFunc, getObjInfo func(context.Context, string, string) (ObjectInfo, error), getObjectInfoDirs ...func(context.Context, string, string) (ObjectInfo, error)) (loi ListObjectsInfo, err error) {
+func listObjects(ctx context.Context, obj ObjectLayer, bucket, prefix, marker, delimiter string, maxKeys int, tpool *TreeWalkPool, listDir ListDirFunc, isLeaf IsLeafFunc, isLeafDir IsLeafDirFunc, getObjInfo func(context.Context, string, string, *ObjectInfo) (ObjectInfo, error), getObjectInfoDirs ...func(context.Context, string, string, *ObjectInfo) (ObjectInfo, error)) (loi ListObjectsInfo, err error) {
 	if delimiter != SlashSeparator && delimiter != "" {
 		return listObjectsNonSlash(ctx, bucket, prefix, marker, delimiter, maxKeys, tpool, listDir, isLeaf, isLeafDir, getObjInfo, getObjectInfoDirs...)
 	}
@@ -349,9 +349,9 @@ func listObjects(ctx context.Context, obj ObjectLayer, bucket, prefix, marker, d
 
 		var objInfo ObjectInfo
 		var err error
-		if HasSuffix(walkResult.entry, SlashSeparator) {
+		if HasSuffix(walkResult.entry.Name, SlashSeparator) {
 			for _, getObjectInfoDir := range getObjectInfoDirs {
-				objInfo, err = getObjectInfoDir(ctx, bucket, walkResult.entry)
+				objInfo, err = getObjectInfoDir(ctx, bucket, walkResult.entry.Name, walkResult.entry.Info)
 				if err == nil {
 					break
 				}
@@ -359,13 +359,13 @@ func listObjects(ctx context.Context, obj ObjectLayer, bucket, prefix, marker, d
 					err = nil
 					objInfo = ObjectInfo{
 						Bucket: bucket,
-						Name:   walkResult.entry,
+						Name:   walkResult.entry.Name,
 						IsDir:  true,
 					}
 				}
 			}
 		} else {
-			objInfo, err = getObjInfo(ctx, bucket, walkResult.entry)
+			objInfo, err = getObjInfo(ctx, bucket, walkResult.entry.Name, walkResult.entry.Info)
 		}
 		if err != nil {
 			// Ignore errFileNotFound as the object might have got

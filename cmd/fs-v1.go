@@ -904,7 +904,7 @@ func (fs *FSObjects) defaultFsJSON(object string) fsMetaV1 {
 	return fsMeta
 }
 
-func (fs *FSObjects) getObjectInfoNoFSLock(ctx context.Context, bucket, object string) (oi ObjectInfo, e error) {
+func (fs *FSObjects) getObjectInfoNoFSLock(ctx context.Context, bucket, object string, info *ObjectInfo) (oi ObjectInfo, e error) {
 	fsMeta := fsMetaV1{}
 	if HasSuffix(object, SlashSeparator) {
 		fi, err := fsStatDir(ctx, pathJoin(fs.fsPath, bucket, object))
@@ -1340,15 +1340,20 @@ func (fs *FSObjects) isLeaf(bucket string, leafPath string) bool {
 // is a leaf or non-leaf entry.
 func (fs *FSObjects) listDirFactory() ListDirFunc {
 	// listDir - lists all the entries at a given prefix and given entry in the prefix.
-	listDir := func(bucket, prefixDir, prefixEntry string) (emptyDir bool, entries []string, delayIsLeaf bool) {
-		var err error
-		entries, err = readDir(pathJoin(fs.fsPath, bucket, prefixDir))
+	listDir := func(bucket, prefixDir, prefixEntry string) (emptyDir bool, entries []*Entry, delayIsLeaf bool) {
+		names, err := readDir(pathJoin(fs.fsPath, bucket, prefixDir))
 		if err != nil && err != errFileNotFound {
 			logger.LogIf(GlobalContext, err)
 			return false, nil, false
 		}
-		if len(entries) == 0 {
+		if len(names) == 0 {
 			return true, nil, false
+		}
+		entries = make([]*Entry, len(names))
+		for _, name := range names {
+			entries = append(entries, &Entry{
+				Name: name,
+			})
 		}
 		entries, delayIsLeaf = filterListEntries(bucket, prefixDir, entries, prefixEntry, fs.isLeaf)
 		return false, entries, delayIsLeaf

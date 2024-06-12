@@ -33,7 +33,7 @@ const volume = "testvolume"
 
 // Test for filterMatchingPrefix.
 func TestFilterMatchingPrefix(t *testing.T) {
-	entries := []string{"a", "aab", "ab", "abbbb", "zzz"}
+	names := []string{"a", "aab", "ab", "abbbb", "zzz"}
 	testCases := []struct {
 		prefixEntry string
 		result      []string
@@ -59,6 +59,12 @@ func TestFilterMatchingPrefix(t *testing.T) {
 	}
 	for i, testCase := range testCases {
 		expected := testCase.result
+		entries := make([]*Entry, len(names))
+		for i, name := range names {
+			entries[i] = &Entry{
+				Name: name,
+			}
+		}
 		got := filterMatchingPrefix(entries, testCase.prefixEntry)
 		if !reflect.DeepEqual(expected, got) {
 			t.Errorf("Test %d : expected %v, got %v", i+1, expected, got)
@@ -87,16 +93,28 @@ func createNamespace(disk StorageAPI, volume string, files []string) error {
 // Returns function "listDir" of the type listDirFunc.
 // disks - used for doing disk.ListDir()
 func listDirFactory(ctx context.Context, disk StorageAPI, isLeaf IsLeafFunc) ListDirFunc {
-	return func(volume, dirPath, dirEntry string) (emptyDir bool, entries []string, delayIsLeaf bool) {
-		entries, err := disk.ListDir(ctx, volume, dirPath, -1)
+	return func(volume, dirPath, dirEntry string) (emptyDir bool, rs []*Entry, delayIsLeaf bool) {
+		names, err := disk.ListDir(ctx, volume, dirPath, -1)
 		if err != nil {
 			return false, nil, false
 		}
-		if len(entries) == 0 {
+		if len(names) == 0 {
 			return true, nil, false
 		}
+		entries := make([]*Entry, len(names))
+		for _, name := range names {
+			entries = append(entries, &Entry{
+				Name: name,
+			})
+		}
 		entries, delayIsLeaf = filterListEntries(volume, dirPath, entries, dirEntry, isLeaf)
-		return false, entries, delayIsLeaf
+		for _, e := range entries {
+			rs = append(rs, &Entry{
+				e.Name,
+				nil,
+			})
+		}
+		return false, rs, delayIsLeaf
 	}
 }
 
@@ -110,7 +128,7 @@ func testTreeWalkPrefix(t *testing.T, listDir ListDirFunc, isLeaf IsLeafFunc, is
 
 	// Check if all entries received on the channel match the prefix.
 	for res := range twResultCh {
-		if !HasPrefix(res.entry, prefix) {
+		if !HasPrefix(res.entry.Name, prefix) {
 			t.Errorf("Entry %s doesn't match prefix %s", res.entry, prefix)
 		}
 	}
@@ -359,7 +377,7 @@ func TestRecursiveTreeWalk(t *testing.T) {
 			for entry := range startTreeWalk(context.Background(), volume,
 				testCase.prefix, testCase.marker, testCase.recursive,
 				listDir, isLeaf, isLeafDir, endWalkCh) {
-				if _, found := testCase.expected[entry.entry]; !found {
+				if _, found := testCase.expected[entry.entry.Name]; !found {
 					t.Errorf("Expected %s, but couldn't find", entry.entry)
 				}
 			}
@@ -437,7 +455,7 @@ func TestSortedness(t *testing.T) {
 		for entry := range startTreeWalk(context.Background(), volume,
 			test.prefix, test.marker, test.recursive,
 			listDir, isLeaf, isLeafDir, endWalkCh) {
-			actualEntries = append(actualEntries, entry.entry)
+			actualEntries = append(actualEntries, entry.entry.Name)
 		}
 		if !sort.IsSorted(sort.StringSlice(actualEntries)) {
 			t.Error(i+1, "Expected entries to be sort, but it wasn't")
@@ -518,11 +536,11 @@ func TestTreeWalkIsEnd(t *testing.T) {
 		for entry = range startTreeWalk(context.Background(), volume, test.prefix,
 			test.marker, test.recursive, listDir, isLeaf, isLeafDir, endWalkCh) {
 		}
-		if entry.entry != test.expectedEntry {
-			t.Errorf("Test %d: Expected entry %s, but received %s with the EOF marker", i, test.expectedEntry, entry.entry)
+		if entry.entry.Name != test.expectedEntry {
+			t.Errorf("Test %d: Expected entry %s, but received %s with the EOF marker", i, test.expectedEntry, entry.entry.Name)
 		}
 		if !entry.end {
-			t.Errorf("Test %d: Last entry %s, doesn't have EOF marker set", i, entry.entry)
+			t.Errorf("Test %d: Last entry %s, doesn't have EOF marker set", i, entry.entry.Name)
 		}
 	}
 

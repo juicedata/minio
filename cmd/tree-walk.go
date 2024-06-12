@@ -22,23 +22,28 @@ import (
 	"strings"
 )
 
+type Entry struct {
+	Name string
+	Info *ObjectInfo
+}
+
 // TreeWalkResult - Tree walk result carries results of tree walking.
 type TreeWalkResult struct {
-	entry      string
+	entry      *Entry
 	isEmptyDir bool
 	end        bool
 }
 
 // Return entries that have prefix prefixEntry.
 // The supplied entries are modified and the returned string is a subslice of entries.
-func filterMatchingPrefix(entries []string, prefixEntry string) []string {
+func filterMatchingPrefix(entries []*Entry, prefixEntry string) []*Entry {
 	if len(entries) == 0 || prefixEntry == "" {
 		return entries
 	}
 	// Write to the beginning of entries.
 	dst := entries[:0]
 	for _, s := range entries {
-		if !HasPrefix(s, prefixEntry) {
+		if !HasPrefix(s.Name, prefixEntry) {
 			continue
 		}
 		dst = append(dst, s)
@@ -50,8 +55,10 @@ func filterMatchingPrefix(entries []string, prefixEntry string) []string {
 // we need to remove this trailing "/" for objects and retain "/" for prefixes before
 // sorting because the trailing "/" can affect the sorting results for certain cases.
 // Ex. lets say entries = ["a-b/", "a/"] and both are objects.
-//     sorting with out trailing "/" = ["a", "a-b"]
-//     sorting with trailing "/"     = ["a-b/", "a/"]
+//
+//	sorting with out trailing "/" = ["a", "a-b"]
+//	sorting with trailing "/"     = ["a-b/", "a/"]
+//
 // Hence if entries[] does not have a case like the above example then isLeaf() check
 // can be delayed till the entry is pushed into the TreeWalkResult channel.
 // delayIsLeafCheck() returns true if isLeaf can be delayed or false if
@@ -80,73 +87,28 @@ func delayIsLeafCheck(entries []string) bool {
 }
 
 // ListDirFunc - "listDir" function of type listDirFunc returned by listDirFactory() - explained below.
-type ListDirFunc func(bucket, prefixDir, prefixEntry string) (emptyDir bool, entries []string, delayIsLeaf bool)
+type ListDirFunc func(bucket, prefixDir, prefixEntry string) (emptyDir bool, entries []*Entry, delayIsLeaf bool)
 
 // IsLeafFunc - A function isLeaf of type isLeafFunc is used to detect if an
 // entry is a leaf entry. There are 2 scenarios where isLeaf should behave
 // differently depending on the backend:
-// 1. FS backend object listing - isLeaf is true if the entry
-//    has no trailing "/"
-// 2. Erasure backend object listing - isLeaf is true if the entry
-//    is a directory and contains xl.meta
+//  1. FS backend object listing - isLeaf is true if the entry
+//     has no trailing "/"
+//  2. Erasure backend object listing - isLeaf is true if the entry
+//     is a directory and contains xl.meta
 type IsLeafFunc func(string, string) bool
 
 // IsLeafDirFunc - A function isLeafDir of type isLeafDirFunc is used to detect
 // if an entry is empty directory.
 type IsLeafDirFunc func(string, string) bool
 
-func filterListEntries(bucket, prefixDir string, entries []string, prefixEntry string, isLeaf IsLeafFunc) ([]string, bool) {
+func filterListEntries(bucket, prefixDir string, entries []*Entry, prefixEntry string, isLeaf IsLeafFunc) ([]*Entry, bool) {
 	// Filter entries that have the prefix prefixEntry.
 	entries = filterMatchingPrefix(entries, prefixEntry)
 
 	// Listing needs to be sorted.
 	sort.Slice(entries, func(i, j int) bool {
-		if !HasSuffix(entries[i], globalDirSuffixWithSlash) && !HasSuffix(entries[j], globalDirSuffixWithSlash) {
-			return entries[i] < entries[j]
-		}
-		first := entries[i]
-		second := entries[j]
-		if HasSuffix(first, globalDirSuffixWithSlash) {
-			first = strings.TrimSuffix(first, globalDirSuffixWithSlash) + slashSeparator
-		}
-		if HasSuffix(second, globalDirSuffixWithSlash) {
-			second = strings.TrimSuffix(second, globalDirSuffixWithSlash) + slashSeparator
-		}
-		return first < second
-	})
-
-	// Can isLeaf() check be delayed till when it has to be sent down the
-	// TreeWalkResult channel?
-	delayIsLeaf := delayIsLeafCheck(entries)
-	if delayIsLeaf {
-		return entries, true
-	}
-
-	// isLeaf() check has to happen here so that trailing "/" for objects can be removed.
-	for i, entry := range entries {
-		if isLeaf(bucket, pathJoin(prefixDir, entry)) {
-			entries[i] = strings.TrimSuffix(entry, slashSeparator)
-		}
-	}
-
-	// Sort again after removing trailing "/" for objects as the previous sort
-	// does not hold good anymore.
-	sort.Slice(entries, func(i, j int) bool {
-		if !HasSuffix(entries[i], globalDirSuffix) && !HasSuffix(entries[j], globalDirSuffix) {
-			return entries[i] < entries[j]
-		}
-		first := entries[i]
-		second := entries[j]
-		if HasSuffix(first, globalDirSuffix) {
-			first = strings.TrimSuffix(first, globalDirSuffix) + slashSeparator
-		}
-		if HasSuffix(second, globalDirSuffix) {
-			second = strings.TrimSuffix(second, globalDirSuffix) + slashSeparator
-		}
-		if first == second {
-			return HasSuffix(entries[i], globalDirSuffix)
-		}
-		return first < second
+		return entries[i].Name < entries[j].Name
 	})
 	return entries, false
 }
@@ -183,7 +145,7 @@ func doTreeWalk(ctx context.Context, bucket, prefixDir, entryPrefixMatch, marker
 	// If markerDir="four/" Search() returns the index of "four/" in the sorted
 	// entries list so we skip all the entries till "four/"
 	idx := sort.Search(len(entries), func(i int) bool {
-		return entries[i] >= markerDir
+		return entries[i].Name >= markerDir
 	})
 	entries = entries[idx:]
 	// For an empty list after search through the entries, return right here.
@@ -193,32 +155,24 @@ func doTreeWalk(ctx context.Context, bucket, prefixDir, entryPrefixMatch, marker
 
 	for i, entry := range entries {
 		var leaf, leafDir bool
-		if i == 0 && entry == "" {
+		if i == 0 && entry.Name == "" {
 			select {
 			case <-endWalkCh:
 				return false, errWalkAbort
-			case resultCh <- TreeWalkResult{entry: prefixDir, isEmptyDir: leafDir, end: (i == len(entries)-1) && isEnd}:
+			case resultCh <- TreeWalkResult{entry: &Entry{prefixDir, entry.Info}, isEmptyDir: leafDir, end: (i == len(entries)-1) && isEnd}:
 			}
 			continue
 		}
 
-		// Decision to do isLeaf check was pushed from listDir() to here.
-		if delayIsLeaf {
-			leaf = isLeaf(bucket, pathJoin(prefixDir, entry))
-			if leaf {
-				entry = strings.TrimSuffix(entry, slashSeparator)
-			}
-		} else {
-			leaf = !HasSuffix(entry, slashSeparator)
-		}
+		leaf = !HasSuffix(entry.Name, slashSeparator)
 
-		if HasSuffix(entry, slashSeparator) {
-			leafDir = isLeafDir(bucket, pathJoin(prefixDir, entry))
+		if HasSuffix(entry.Name, slashSeparator) {
+			leafDir = isLeafDir(bucket, pathJoin(prefixDir, entry.Name))
 		}
 
 		isDir := !leafDir && !leaf
 
-		if i == 0 && markerDir == entry {
+		if i == 0 && markerDir == entry.Name {
 			if !recursive {
 				// Skip as the marker would already be listed in the previous listing.
 				continue
@@ -235,7 +189,7 @@ func doTreeWalk(ctx context.Context, bucket, prefixDir, entryPrefixMatch, marker
 		if recursive && isDir {
 			// If the entry is a directory, we will need recurse into it.
 			markerArg := ""
-			if entry == markerDir {
+			if entry.Name == markerDir {
 				// We need to pass "five.txt" as marker only if we are
 				// recursing into "four/"
 				markerArg = markerBase
@@ -244,7 +198,7 @@ func doTreeWalk(ctx context.Context, bucket, prefixDir, entryPrefixMatch, marker
 			// markIsEnd is passed to this entry's treeWalk() so that treeWalker.end can be marked
 			// true at the end of the treeWalk stream.
 			markIsEnd := i == len(entries)-1 && isEnd
-			emptyDir, err := doTreeWalk(ctx, bucket, pathJoin(prefixDir, entry), prefixMatch, markerArg, recursive,
+			emptyDir, err := doTreeWalk(ctx, bucket, pathJoin(prefixDir, entry.Name), prefixMatch, markerArg, recursive,
 				listDir, isLeaf, isLeafDir, resultCh, endWalkCh, markIsEnd)
 			if err != nil {
 				return false, err
@@ -260,10 +214,11 @@ func doTreeWalk(ctx context.Context, bucket, prefixDir, entryPrefixMatch, marker
 
 		// EOF is set if we are at last entry and the caller indicated we at the end.
 		isEOF := (i == len(entries)-1) && isEnd
+		entry.Name = pathJoin(prefixDir, entry.Name)
 		select {
 		case <-endWalkCh:
 			return false, errWalkAbort
-		case resultCh <- TreeWalkResult{entry: pathJoin(prefixDir, entry), isEmptyDir: leafDir, end: isEOF}:
+		case resultCh <- TreeWalkResult{entry: entry, isEmptyDir: leafDir, end: isEOF}:
 		}
 	}
 
