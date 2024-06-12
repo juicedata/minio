@@ -86,7 +86,7 @@ func newStorageAPI(endpoint Endpoint) (storage StorageAPI, err error) {
 	return newStorageRESTClient(endpoint, true), nil
 }
 
-func listObjectsNonSlash(ctx context.Context, bucket, prefix, marker, delimiter string, maxKeys int, tpool *TreeWalkPool, listDir ListDirFunc, isLeaf IsLeafFunc, isLeafDir IsLeafDirFunc, getObjInfo func(context.Context, string, string, *ObjectInfo) (ObjectInfo, error), getObjectInfoDirs ...func(context.Context, string, string) (ObjectInfo, error)) (loi ListObjectsInfo, err error) {
+func listObjectsNonSlash(ctx context.Context, bucket, prefix, marker, delimiter string, maxKeys int, tpool *TreeWalkPool, listDir ListDirFunc, isLeaf IsLeafFunc, isLeafDir IsLeafDirFunc, getObjInfo func(context.Context, string, string, *ObjectInfo) (ObjectInfo, error), getObjectInfoDirs ...func(context.Context, string, string, *ObjectInfo) (ObjectInfo, error)) (loi ListObjectsInfo, err error) {
 	endWalkCh := make(chan struct{})
 	defer close(endWalkCh)
 	recursive := true
@@ -177,7 +177,7 @@ func listObjectsNonSlash(ctx context.Context, bucket, prefix, marker, delimiter 
 // to allocate a receive channel for ObjectInfo, upon any unhandled
 // error walker returns error. Optionally if context.Done() is received
 // then Walk() stops the walker.
-func FsWalk(ctx context.Context, obj ObjectLayer, bucket, prefix string, listDir ListDirFunc, isLeaf IsLeafFunc, isLeafDir IsLeafDirFunc, results chan<- ObjectInfo, getObjInfo func(context.Context, string, *Entry) (ObjectInfo, error), getObjectInfoDirs ...func(context.Context, string, string) (ObjectInfo, error)) error {
+func FsWalk(ctx context.Context, obj ObjectLayer, bucket, prefix string, listDir ListDirFunc, isLeaf IsLeafFunc, isLeafDir IsLeafDirFunc, results chan<- ObjectInfo, getObjInfo func(context.Context, string, string, *ObjectInfo) (ObjectInfo, error), getObjectInfoDirs ...func(context.Context, string, string, *ObjectInfo) (ObjectInfo, error)) error {
 	if err := checkListObjsArgs(ctx, bucket, prefix, "", obj); err != nil {
 		// Upon error close the channel.
 		close(results)
@@ -199,7 +199,7 @@ func FsWalk(ctx context.Context, obj ObjectLayer, bucket, prefix string, listDir
 			var err error
 			if HasSuffix(walkResult.entry.Name, SlashSeparator) {
 				for _, getObjectInfoDir := range getObjectInfoDirs {
-					objInfo, err = getObjectInfoDir(ctx, bucket, walkResult.entry.Name)
+					objInfo, err = getObjectInfoDir(ctx, bucket, walkResult.entry.Name, walkResult.entry.Info)
 					if err == nil {
 						break
 					}
@@ -213,7 +213,7 @@ func FsWalk(ctx context.Context, obj ObjectLayer, bucket, prefix string, listDir
 					}
 				}
 			} else {
-				objInfo, err = getObjInfo(ctx, bucket, walkResult.entry)
+				objInfo, err = getObjInfo(ctx, bucket, walkResult.entry.Name, walkResult.entry.Info)
 			}
 			if err != nil {
 				continue
@@ -227,7 +227,7 @@ func FsWalk(ctx context.Context, obj ObjectLayer, bucket, prefix string, listDir
 	return nil
 }
 
-func listObjects(ctx context.Context, obj ObjectLayer, bucket, prefix, marker, delimiter string, maxKeys int, tpool *TreeWalkPool, listDir ListDirFunc, isLeaf IsLeafFunc, isLeafDir IsLeafDirFunc, getObjInfo func(context.Context, string, string, *ObjectInfo) (ObjectInfo, error), getObjectInfoDirs ...func(context.Context, string, string) (ObjectInfo, error)) (loi ListObjectsInfo, err error) {
+func listObjects(ctx context.Context, obj ObjectLayer, bucket, prefix, marker, delimiter string, maxKeys int, tpool *TreeWalkPool, listDir ListDirFunc, isLeaf IsLeafFunc, isLeafDir IsLeafDirFunc, getObjInfo func(context.Context, string, string, *ObjectInfo) (ObjectInfo, error), getObjectInfoDirs ...func(context.Context, string, string, *ObjectInfo) (ObjectInfo, error)) (loi ListObjectsInfo, err error) {
 	if delimiter != SlashSeparator && delimiter != "" {
 		return listObjectsNonSlash(ctx, bucket, prefix, marker, delimiter, maxKeys, tpool, listDir, isLeaf, isLeafDir, getObjInfo, getObjectInfoDirs...)
 	}
@@ -297,7 +297,7 @@ func listObjects(ctx context.Context, obj ObjectLayer, bucket, prefix, marker, d
 		if HasSuffix(walkResult.entry.Name, SlashSeparator) {
 			g.Go(func() error {
 				for _, getObjectInfoDir := range getObjectInfoDirs {
-					objInfo, err := getObjectInfoDir(ctx, bucket, walkResult.entry.Name)
+					objInfo, err := getObjectInfoDir(ctx, bucket, walkResult.entry.Name, walkResult.entry.Info)
 					if err == nil {
 						objInfoFound[i] = &objInfo
 						// Done...

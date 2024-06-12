@@ -36,14 +36,14 @@ type TreeWalkResult struct {
 
 // Return entries that have prefix prefixEntry.
 // The supplied entries are modified and the returned string is a subslice of entries.
-func filterMatchingPrefix(entries []string, prefixEntry string) []string {
+func filterMatchingPrefix(entries []*Entry, prefixEntry string) []*Entry {
 	if len(entries) == 0 || prefixEntry == "" {
 		return entries
 	}
 	// Write to the beginning of entries.
 	dst := entries[:0]
 	for _, s := range entries {
-		if !HasPrefix(s, prefixEntry) {
+		if !HasPrefix(s.Name, prefixEntry) {
 			continue
 		}
 		dst = append(dst, s)
@@ -102,13 +102,13 @@ type IsLeafFunc func(string, string) bool
 // if an entry is empty directory.
 type IsLeafDirFunc func(string, string) bool
 
-func filterListEntries(bucket, prefixDir string, entries []string, prefixEntry string, isLeaf IsLeafFunc) ([]string, bool) {
+func filterListEntries(bucket, prefixDir string, entries []*Entry, prefixEntry string, isLeaf IsLeafFunc) ([]*Entry, bool) {
 	// Filter entries that have the prefix prefixEntry.
 	entries = filterMatchingPrefix(entries, prefixEntry)
 
 	// Listing needs to be sorted.
 	sort.Slice(entries, func(i, j int) bool {
-		return entries[i] < entries[j]
+		return entries[i].Name < entries[j].Name
 	})
 	return entries, false
 }
@@ -159,7 +159,7 @@ func doTreeWalk(ctx context.Context, bucket, prefixDir, entryPrefixMatch, marker
 			select {
 			case <-endWalkCh:
 				return false, errWalkAbort
-			case resultCh <- TreeWalkResult{entry: &Entry{prefixDir, nil}, isEmptyDir: leafDir, end: (i == len(entries)-1) && isEnd}:
+			case resultCh <- TreeWalkResult{entry: &Entry{prefixDir, entry.Info}, isEmptyDir: leafDir, end: (i == len(entries)-1) && isEnd}:
 			}
 			continue
 		}
@@ -214,10 +214,11 @@ func doTreeWalk(ctx context.Context, bucket, prefixDir, entryPrefixMatch, marker
 
 		// EOF is set if we are at last entry and the caller indicated we at the end.
 		isEOF := (i == len(entries)-1) && isEnd
+		entry.Name = pathJoin(prefixDir, entry.Name)
 		select {
 		case <-endWalkCh:
 			return false, errWalkAbort
-		case resultCh <- TreeWalkResult{entry: &Entry{pathJoin(prefixDir, entry.Name), nil}, isEmptyDir: leafDir, end: isEOF}:
+		case resultCh <- TreeWalkResult{entry: entry, isEmptyDir: leafDir, end: isEOF}:
 		}
 	}
 

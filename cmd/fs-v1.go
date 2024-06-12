@@ -878,7 +878,7 @@ func (fs *FSObjects) defaultFsJSON(object string) fsMetaV1 {
 	return fsMeta
 }
 
-func (fs *FSObjects) getObjectInfoNoFSLock(ctx context.Context, bucket, object string) (oi ObjectInfo, e error) {
+func (fs *FSObjects) getObjectInfoNoFSLock(ctx context.Context, bucket, object string, info *ObjectInfo) (oi ObjectInfo, e error) {
 	fsMeta := fsMetaV1{}
 	if HasSuffix(object, SlashSeparator) {
 		fi, err := fsStatDir(ctx, pathJoin(fs.fsPath, bucket, object))
@@ -1317,8 +1317,28 @@ func (fs *FSObjects) isLeaf(bucket string, leafPath string) bool {
 // isLeaf - is used by listDir function to check if an entry
 // is a leaf or non-leaf entry.
 func (fs *FSObjects) listDirFactory() ListDirFunc {
+	// listDir - lists all the entries at a given prefix and given entry in the prefix.
+	listDir := func(bucket, prefixDir, prefixEntry string) (emptyDir bool, entries []*Entry, delayIsLeaf bool) {
+		names, err := readDir(pathJoin(fs.fsPath, bucket, prefixDir))
+		if err != nil && err != errFileNotFound {
+			logger.LogIf(GlobalContext, err)
+			return false, nil, false
+		}
+		if len(names) == 0 {
+			return true, nil, false
+		}
+		entries = make([]*Entry, len(names))
+		for _, name := range names {
+			entries = append(entries, &Entry{
+				Name: name,
+			})
+		}
+		entries, delayIsLeaf = filterListEntries(bucket, prefixDir, entries, prefixEntry, fs.isLeaf)
+		return false, entries, delayIsLeaf
+	}
+
 	// Return list factory instance.
-	return nil
+	return listDir
 }
 
 // isObjectDir returns true if the specified bucket & prefix exists
@@ -1415,9 +1435,9 @@ func (fs *FSObjects) ListObjects(ctx context.Context, bucket, prefix, marker, de
 	defer func() {
 		atomic.AddInt64(&fs.activeIOCount, -1)
 	}()
-	return ListObjectsInfo{}, nil
-	//return listObjects(ctx, fs, bucket, prefix, marker, delimiter, maxKeys, fs.listPool,
-	//	fs.listDirFactory(), fs.isLeaf, fs.isLeafDir, fs.getObjectInfoNoFSLock, fs.getObjectInfoNoFSLock)
+
+	return listObjects(ctx, fs, bucket, prefix, marker, delimiter, maxKeys, fs.listPool,
+		fs.listDirFactory(), fs.isLeaf, fs.isLeafDir, fs.getObjectInfoNoFSLock, fs.getObjectInfoNoFSLock)
 }
 
 // GetObjectTags - get object tags from an existing object
@@ -1515,7 +1535,7 @@ func (fs *FSObjects) HealBucket(ctx context.Context, bucket string, opts madmin.
 // error walker returns error. Optionally if context.Done() is received
 // then Walk() stops the walker.
 func (fs *FSObjects) Walk(ctx context.Context, bucket, prefix string, results chan<- ObjectInfo, opts ObjectOptions) error {
-	return nil
+	return FsWalk(ctx, fs, bucket, prefix, fs.listDirFactory(), fs.isLeaf, fs.isLeafDir, results, fs.getObjectInfoNoFSLock, fs.getObjectInfoNoFSLock)
 }
 
 // HealObjects - no-op for fs. Valid only for Erasure.

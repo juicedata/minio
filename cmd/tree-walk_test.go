@@ -33,7 +33,7 @@ const volume = "testvolume"
 
 // Test for filterMatchingPrefix.
 func TestFilterMatchingPrefix(t *testing.T) {
-	entries := []string{"a", "aab", "ab", "abbbb", "zzz"}
+	names := []string{"a", "aab", "ab", "abbbb", "zzz"}
 	testCases := []struct {
 		prefixEntry string
 		result      []string
@@ -59,6 +59,12 @@ func TestFilterMatchingPrefix(t *testing.T) {
 	}
 	for i, testCase := range testCases {
 		expected := testCase.result
+		entries := make([]*Entry, len(names))
+		for i, name := range names {
+			entries[i] = &Entry{
+				Name: name,
+			}
+		}
 		got := filterMatchingPrefix(entries, testCase.prefixEntry)
 		if !reflect.DeepEqual(expected, got) {
 			t.Errorf("Test %d : expected %v, got %v", i+1, expected, got)
@@ -88,17 +94,23 @@ func createNamespace(disk StorageAPI, volume string, files []string) error {
 // disks - used for doing disk.ListDir()
 func listDirFactory(ctx context.Context, disk StorageAPI, isLeaf IsLeafFunc) ListDirFunc {
 	return func(volume, dirPath, dirEntry string) (emptyDir bool, rs []*Entry, delayIsLeaf bool) {
-		entries, err := disk.ListDir(ctx, volume, dirPath, -1)
+		names, err := disk.ListDir(ctx, volume, dirPath, -1)
 		if err != nil {
 			return false, nil, false
 		}
-		if len(entries) == 0 {
+		if len(names) == 0 {
 			return true, nil, false
 		}
+		entries := make([]*Entry, len(names))
+		for _, name := range names {
+			entries = append(entries, &Entry{
+				Name: name,
+			})
+		}
 		entries, delayIsLeaf = filterListEntries(volume, dirPath, entries, dirEntry, isLeaf)
-		for _, name := range entries {
+		for _, e := range entries {
 			rs = append(rs, &Entry{
-				name,
+				e.Name,
 				nil,
 			})
 		}
