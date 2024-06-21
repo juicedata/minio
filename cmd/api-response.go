@@ -301,8 +301,7 @@ type Object struct {
 	Size         int64
 
 	// Owner of the object.
-	Owner Owner
-
+	Owner *Owner `xml:"Owner,omitempty"`
 	// The class of storage used to store the object.
 	StorageClass string
 
@@ -460,7 +459,7 @@ func generateListVersionsResponse(bucket, prefix, marker, versionIDMarker, delim
 		} else {
 			content.StorageClass = globalMinioDefaultStorageClass
 		}
-		content.Owner = owner
+		content.Owner = &owner
 		content.VersionID = object.VersionID
 		if content.VersionID == "" {
 			content.VersionID = nullVersionID
@@ -496,7 +495,7 @@ func generateListVersionsResponse(bucket, prefix, marker, versionIDMarker, delim
 // generates an ListObjectsV1 response for the said bucket with other enumerated options.
 func generateListObjectsV1Response(bucket, prefix, marker, delimiter, encodingType string, maxKeys int, resp ListObjectsInfo) ListObjectsResponse {
 	contents := make([]Object, 0, len(resp.Objects))
-	owner := Owner{
+	owner := &Owner{
 		ID:          globalMinioDefaultOwnerID,
 		DisplayName: "minio",
 	}
@@ -545,9 +544,12 @@ func generateListObjectsV1Response(bucket, prefix, marker, delimiter, encodingTy
 // generates an ListObjectsV2 response for the said bucket with other enumerated options.
 func generateListObjectsV2Response(bucket, prefix, token, nextToken, startAfter, delimiter, encodingType string, fetchOwner, isTruncated bool, maxKeys int, objects []ObjectInfo, prefixes []string, metadata bool) ListObjectsV2Response {
 	contents := make([]Object, 0, len(objects))
-	owner := Owner{
-		ID:          globalMinioDefaultOwnerID,
-		DisplayName: "minio",
+	var owner *Owner
+	if fetchOwner {
+		owner = &Owner{
+			ID:          globalMinioDefaultOwnerID,
+			DisplayName: "minio",
+		}
 	}
 	data := ListObjectsV2Response{}
 
