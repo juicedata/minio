@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -469,42 +470,42 @@ func (sys *IAMSys) Load(ctx context.Context, store IAMStorageAPI) error {
 	defer store.runlock()
 
 	isMinIOUsersSys := sys.usersSysType == MinIOUsersSysType
-	if err := store.loadPolicyDocs(ctx, iamPolicyDocsMap); err != nil {
+	if err := store.loadPolicyDocs(ctx, iamPolicyDocsMap); err != nil && !errors.As(err, &BucketNotFound{}) {
 		return err
 	}
 	// Sets default canned policies, if none are set.
 	setDefaultCannedPolicies(iamPolicyDocsMap)
 
 	if isMinIOUsersSys {
-		if err := store.loadUsers(ctx, regularUser, iamUsersMap); err != nil {
+		if err := store.loadUsers(ctx, regularUser, iamUsersMap); err != nil && !errors.As(err, &BucketNotFound{}) {
 			return err
 		}
-		if err := store.loadGroups(ctx, iamGroupsMap); err != nil {
+		if err := store.loadGroups(ctx, iamGroupsMap); err != nil && !errors.As(err, &BucketNotFound{}) {
 			return err
 		}
 	}
 
 	// load polices mapped to users
-	if err := store.loadMappedPolicies(ctx, regularUser, false, iamUserPolicyMap); err != nil {
+	if err := store.loadMappedPolicies(ctx, regularUser, false, iamUserPolicyMap); err != nil && !errors.As(err, &BucketNotFound{}) {
 		return err
 	}
 
 	// load policies mapped to groups
-	if err := store.loadMappedPolicies(ctx, regularUser, true, iamGroupPolicyMap); err != nil {
+	if err := store.loadMappedPolicies(ctx, regularUser, true, iamGroupPolicyMap); err != nil && !errors.As(err, &BucketNotFound{}) {
 		return err
 	}
 
-	if err := store.loadUsers(ctx, srvAccUser, iamUsersMap); err != nil {
+	if err := store.loadUsers(ctx, srvAccUser, iamUsersMap); err != nil && !errors.As(err, &BucketNotFound{}) {
 		return err
 	}
 
 	// load STS temp users
-	if err := store.loadUsers(ctx, stsUser, iamUsersMap); err != nil {
+	if err := store.loadUsers(ctx, stsUser, iamUsersMap); err != nil && !errors.As(err, &BucketNotFound{}) {
 		return err
 	}
 
 	// load STS policy mappings
-	if err := store.loadMappedPolicies(ctx, stsUser, false, iamUserPolicyMap); err != nil {
+	if err := store.loadMappedPolicies(ctx, stsUser, false, iamUserPolicyMap); err != nil && !errors.As(err, &BucketNotFound{}) {
 		return err
 	}
 
@@ -579,41 +580,43 @@ func (sys *IAMSys) Init(ctx context.Context, objAPI ObjectLayer) {
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	for {
-		// let one of the server acquire the lock, if not let them timeout.
-		// which shall be retried again by this loop.
-		if _, err := txnLk.GetLock(retryCtx, iamLockTimeout); err != nil {
-			logger.Info("Waiting for all MinIO IAM sub-system to be initialized.. trying to acquire lock")
-			time.Sleep(time.Duration(r.Float64() * float64(5*time.Second)))
-			continue
-		}
-
-		if globalEtcdClient != nil {
-		}
-
-		// These messages only meant primarily for distributed setup, so only log during distributed setup.
-		if globalIsDistErasure {
-			logger.Info("Waiting for all MinIO IAM sub-system to be initialized.. lock acquired")
-		}
-
-		// Migrate IAM configuration, if necessary.
-		if err := sys.doIAMConfigMigration(ctx); err != nil {
-			txnLk.Unlock()
-			if errors.Is(err, madmin.ErrMaliciousData) {
-				logger.Fatal(err, "Unable to read encrypted IAM configuration. Please check your credentials.")
-			}
-			if configRetriableErrors(err) {
-				logger.Info("Waiting for all MinIO IAM sub-system to be initialized.. possible cause (%v)", err)
+	if os.Getenv("JUICEFS_META_READ_ONLY") == "" {
+		for {
+			// let one of the server acquire the lock, if not let them timeout.
+			// which shall be retried again by this loop.
+			if _, err := txnLk.GetLock(retryCtx, iamLockTimeout); err != nil {
+				logger.Info("Waiting for all MinIO IAM sub-system to be initialized.. trying to acquire lock")
+				time.Sleep(time.Duration(r.Float64() * float64(5*time.Second)))
 				continue
 			}
-			logger.LogIf(ctx, fmt.Errorf("Unable to migrate IAM users and policies to new format: %w", err))
-			logger.LogIf(ctx, errors.New("IAM sub-system is partially initialized, some users may not be available"))
-			return
-		}
 
-		// Successfully migrated, proceed to load the users.
-		txnLk.Unlock()
-		break
+			if globalEtcdClient != nil {
+			}
+
+			// These messages only meant primarily for distributed setup, so only log during distributed setup.
+			if globalIsDistErasure {
+				logger.Info("Waiting for all MinIO IAM sub-system to be initialized.. lock acquired")
+			}
+
+			// Migrate IAM configuration, if necessary.
+			if err := sys.doIAMConfigMigration(ctx); err != nil {
+				txnLk.Unlock()
+				if errors.Is(err, madmin.ErrMaliciousData) {
+					logger.Fatal(err, "Unable to read encrypted IAM configuration. Please check your credentials.")
+				}
+				if configRetriableErrors(err) {
+					logger.Info("Waiting for all MinIO IAM sub-system to be initialized.. possible cause (%v)", err)
+					continue
+				}
+				logger.LogIf(ctx, fmt.Errorf("Unable to migrate IAM users and policies to new format: %w", err))
+				logger.LogIf(ctx, errors.New("IAM sub-system is partially initialized, some users may not be available"))
+				return
+			}
+
+			// Successfully migrated, proceed to load the users.
+			txnLk.Unlock()
+			break
+		}
 	}
 
 	for {

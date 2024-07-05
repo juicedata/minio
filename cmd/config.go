@@ -19,6 +19,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path"
 	"sort"
 	"strings"
@@ -204,6 +205,12 @@ func NewConfigSys() *ConfigSys {
 func initConfig(objAPI ObjectLayer) error {
 	if objAPI == nil {
 		return errServerNotInitialized
+	}
+	if os.Getenv("JUICEFS_META_READ_ONLY") != "" {
+		globalServerConfigMu.Lock()
+		globalServerConfig = config.New()
+		globalServerConfigMu.Unlock()
+		return nil
 	}
 
 	if isFile(getConfigFile()) {
