@@ -636,6 +636,9 @@ type RemoveObjectArgs struct {
 // RemoveObject - removes an object, or all the objects at a given prefix.
 func (web *webAPIHandlers) RemoveObject(r *http.Request, args *RemoveObjectArgs, reply *WebGenericRep) error {
 	ctx := newWebContext(r, args, "WebRemoveObject")
+	if os.Getenv("JUICEFS_META_READ_ONLY") != "" {
+		return toJSONError(ctx, errors.New("juicefs meta is read only"))
+	}
 	objectAPI := web.ObjectAPI()
 	if objectAPI == nil {
 		return toJSONError(ctx, errServerNotInitialized)
