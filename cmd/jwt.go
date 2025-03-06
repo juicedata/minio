@@ -19,6 +19,7 @@ package cmd
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	jwtgo "github.com/dgrijalva/jwt-go"
@@ -102,7 +103,7 @@ func authenticateLDAPUsersForJWT(username, password string, expiredAt time.Time)
 	// Set the newly generated credentials, policyName is empty on purpose
 	// LDAP policies are applied automatically using their ldapUser, ldapGroups
 	// mapping.
-	if err = globalIAMSys.SetTempUser(cred.AccessKey, cred, ""); err != nil {
+	if err = globalIAMSys.SetTempUser(cred.AccessKey, cred, strings.Join(ldapPolicies, ",")); err != nil {
 		return auth.Credentials{}, "", errAuthentication
 	}
 
