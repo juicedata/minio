@@ -78,6 +78,7 @@ type StandardClaims struct {
 // MapClaims - implements custom unmarshaller
 type MapClaims struct {
 	AccessKey string `json:"accessKey,omitempty"`
+	LDAPUser  string `json:"ldapUser,omitempty"`
 	jwtgo.MapClaims
 }
 
@@ -160,6 +161,12 @@ func (c *MapClaims) SetExpiry(t time.Time) {
 func (c *MapClaims) SetAccessKey(accessKey string) {
 	c.MapClaims["sub"] = accessKey
 	c.MapClaims["accessKey"] = accessKey
+}
+
+// SetLDAPUser sets parent user dn as custom
+// "ldapUser" field.
+func (c *MapClaims) SetLDAPUser(ldapUser string) {
+	c.MapClaims["ldapUser"] = ldapUser
 }
 
 // Valid - implements https://godoc.org/github.com/dgrijalva/jwt-go#Claims compatible
@@ -317,6 +324,7 @@ func ParseWithClaims(tokenStr string, claims *MapClaims, fn func(*MapClaims) ([]
 				jwtgo.ValidationErrorClaimsInvalid)
 		}
 	}
+	claims.LDAPUser, _ = claims.Lookup("ldapUser")
 
 	// Lookup key from claims, claims may not be valid and may return
 	// invalid key which is okay as the signature verification will fail.

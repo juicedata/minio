@@ -2159,13 +2159,13 @@ func (sys *IAMSys) IsAllowedLDAPSTS(args iampolicy.Args, parentUser string) bool
 	}
 
 	// Check policy for this LDAP user.
-	ldapPolicies, err := sys.PolicyDBGet(parentUser, false, args.Groups...)
-	if err != nil {
-		return false
-	}
-
+	ldapPolicies, _ := sys.policyDBGet(args.AccountName, false)
 	if len(ldapPolicies) == 0 {
-		return false
+		parentPolicies, err := sys.PolicyDBGet(parentUser, false, args.Groups...)
+		if err != nil {
+			return false
+		}
+		ldapPolicies = parentPolicies
 	}
 
 	var availablePolicies []iampolicy.Policy

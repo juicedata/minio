@@ -62,6 +62,9 @@ func authenticateJWTUsers(accessKey, secretKey string, expiry time.Duration) (st
 	claims := xjwt.NewMapClaims()
 	claims.SetExpiry(expiresAt)
 	claims.SetAccessKey(cred.AccessKey)
+	if cred.ParentUser != "" {
+		claims.SetLDAPUser(cred.ParentUser)
+	}
 
 	jwt := jwtgo.NewWithClaims(jwtgo.SigningMethodHS512, claims)
 	return jwt.SignedString([]byte(secret))
@@ -100,9 +103,7 @@ func authenticateLDAPUsersForJWT(username, password string, expiredAt time.Time)
 	cred.ParentUser = ldapUserDN
 	cred.Groups = ldapGroups
 
-	// Set the newly generated credentials, policyName is empty on purpose
-	// LDAP policies are applied automatically using their ldapUser, ldapGroups
-	// mapping.
+	// Set the newly generated credentials, ensure that policies are fixed during the session.
 	if err = globalIAMSys.SetTempUser(cred.AccessKey, cred, strings.Join(ldapPolicies, ",")); err != nil {
 		return auth.Credentials{}, "", errAuthentication
 	}
