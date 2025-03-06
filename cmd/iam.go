@@ -1034,6 +1034,7 @@ func (sys *IAMSys) GetUserInfo(name string) (u madmin.UserInfo, err error) {
 		}
 		return madmin.UserInfo{
 			PolicyName: mappedPolicy.Policies,
+			Status:     madmin.AccountEnabled,
 			MemberOf:   memberships.ToSlice(),
 		}, nil
 	}
