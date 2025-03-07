@@ -963,6 +963,13 @@ func (sys *IAMSys) listLDAPUsers() (map[string]madmin.UserInfo, error) {
 		}
 	}
 
+	// remove temp users created via STS
+	for k, v := range sys.iamUsersMap {
+		if v.IsTemp() || v.IsServiceAccount() {
+			delete(users, k)
+		}
+	}
+
 	return users, nil
 }
 
