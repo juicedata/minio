@@ -1835,17 +1835,40 @@ func (sys *IAMSys) ListGroups() (r []string, err error) {
 		return r, errServerNotInitialized
 	}
 
-	if sys.usersSysType != MinIOUsersSysType {
-		return nil, errIAMActionNotAllowed
+	switch sys.usersSysType {
+	case MinIOUsersSysType:
+		return sys.listMinIOGroups()
+	case LDAPUsersSysType:
+		return sys.listLDAPGroups()
+	default:
+		return r, errIAMActionNotAllowed
 	}
+}
 
+func (sys *IAMSys) listMinIOGroups() ([]string, error) {
 	<-sys.configLoaded
 
 	sys.Lock()
 	defer sys.Unlock()
 
-	r = make([]string, 0, len(sys.iamGroupsMap))
+	r := make([]string, 0, len(sys.iamGroupsMap))
 	for k := range sys.iamGroupsMap {
+		r = append(r, k)
+	}
+
+	return r, nil
+}
+
+func (sys *IAMSys) listLDAPGroups() ([]string, error) {
+	<-sys.configLoaded
+
+	policyMap := make(map[string]MappedPolicy)
+	if err := sys.store.loadMappedPolicies(context.Background(), stsUser, true, policyMap); err != nil {
+		return nil, err
+	}
+
+	r := make([]string, 0, len(policyMap))
+	for k := range policyMap {
 		r = append(r, k)
 	}
 
