@@ -49,6 +49,9 @@ type LifecycleSys struct{}
 
 // Get - gets lifecycle config associated to a given bucket name.
 func (sys *LifecycleSys) Get(bucketName string) (lc *lifecycle.Lifecycle, err error) {
+	if globalIsJFSGateway {
+		return nil, BucketLifecycleNotFound{Bucket: bucketName}
+	}
 	if globalIsGateway {
 		objAPI := newObjectLayerFn()
 		if objAPI == nil {

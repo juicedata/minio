@@ -214,10 +214,10 @@ func newAllSubsystems() {
 	globalPolicySys = NewPolicySys()
 
 	// Create new lifecycle system.
-	//globalLifecycleSys = NewLifecycleSys()
+	globalLifecycleSys = NewLifecycleSys()
 
 	// Create new bucket encryption subsystem
-	//globalBucketSSEConfigSys = NewBucketSSEConfigSys()
+	globalBucketSSEConfigSys = NewBucketSSEConfigSys()
 
 	// Create new bucket object lock subsystem
 	globalBucketObjectLockSys = NewBucketObjectLockSys()
@@ -528,6 +528,8 @@ func newObjectLayer(ctx context.Context, endpointServerPools EndpointServerPools
 }
 
 func ServerMainForJFS(ctx *cli.Context, jfs ObjectLayer) {
+	globalIsJFSGateway = true
+
 	defer globalDNSCache.Stop()
 
 	signal.Notify(globalOSSignalCh, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)

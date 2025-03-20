@@ -115,6 +115,9 @@ var globalCLIContext = struct {
 }{}
 
 var (
+	// Indicates if the running minio server is in jfs gateway mode.
+	globalIsJFSGateway = false
+
 	// Indicates if the running minio server is distributed setup.
 	globalIsDistErasure = false
 
