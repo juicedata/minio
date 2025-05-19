@@ -33,7 +33,7 @@ import (
 	"strings"
 	"testing"
 
-	jwtgo "github.com/dgrijalva/jwt-go"
+	jwtgo "github.com/golang-jwt/jwt/v4"
 	humanize "github.com/dustin/go-humanize"
 	xjwt "github.com/minio/minio/cmd/jwt"
 	"github.com/minio/minio/pkg/hash"
