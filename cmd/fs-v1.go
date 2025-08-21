@@ -878,7 +878,7 @@ func (fs *FSObjects) defaultFsJSON(object string) fsMetaV1 {
 	return fsMeta
 }
 
-func (fs *FSObjects) getObjectInfoNoFSLock(ctx context.Context, bucket, object string, info *ObjectInfo) (oi ObjectInfo, e error) {
+func (fs *FSObjects) getObjectInfoNoFSLock(ctx context.Context, bucket, object string, info any) (oi ObjectInfo, e error) {
 	fsMeta := fsMetaV1{}
 	if HasSuffix(object, SlashSeparator) {
 		fi, err := fsStatDir(ctx, pathJoin(fs.fsPath, bucket, object))

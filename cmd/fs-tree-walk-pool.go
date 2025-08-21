@@ -18,7 +18,6 @@ package cmd
 
 import (
 	"errors"
-	"reflect"
 	"sync"
 	"time"
 )
@@ -27,7 +26,7 @@ import (
 const (
 	globalLookupTimeout    = time.Minute * 30 // 30minutes.
 	treeWalkEntryLimit     = 50
-	treeWalkSameEntryLimit = 4
+	treeWalkSameEntryLimit = 2
 )
 
 // listParams - list object params used for list object map
@@ -46,10 +45,9 @@ var errWalkAbort = errors.New("treeWalk abort")
 
 // treeWalk - represents the go routine that does the file tree walk.
 type treeWalk struct {
-	added      time.Time
-	resultCh   chan TreeWalkResult
-	endWalkCh  chan struct{}   // To signal when treeWalk go-routine should end.
-	endTimerCh chan<- struct{} // To signal when timer go-routine should end.
+	added     time.Time
+	resultCh  chan TreeWalkResult
+	endWalkCh chan struct{} // To signal when treeWalk go-routine should end.
 }
 
 // TreeWalkPool - pool of treeWalk go routines.
@@ -69,6 +67,7 @@ func NewTreeWalkPool(timeout time.Duration) *TreeWalkPool {
 		pool:    make(map[listParams][]treeWalk),
 		timeOut: timeout,
 	}
+	go tPool.cleanup()
 	return tPool
 }
 
@@ -93,18 +92,10 @@ func (t *TreeWalkPool) Release(params listParams) (resultCh chan TreeWalkResult,
 	} else {
 		delete(t.pool, params)
 	}
-	walk.endTimerCh <- struct{}{}
 	return walk.resultCh, walk.endWalkCh
 }
 
 // Set - adds a treeWalk to the treeWalkPool.
-// Also starts a timer go-routine that ends when:
-// 1) time.After() expires after t.timeOut seconds.
-//    The expiration is needed so that the treeWalk go-routine resources are freed after a timeout
-//    if the S3 client does only partial listing of objects.
-// 2) Release() signals the timer go-routine to end on endTimerCh.
-//    During listing the timer should not timeout and end the treeWalk go-routine, hence the
-//    timer go-routine should be ended.
 func (t *TreeWalkPool) Set(params listParams, resultCh chan TreeWalkResult, endWalkCh chan struct{}) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -113,99 +104,51 @@ func (t *TreeWalkPool) Set(params listParams, resultCh chan TreeWalkResult, endW
 		age := time.Now()
 		var oldest listParams
 		for k, v := range t.pool {
-			if len(v) == 0 {
-				delete(t.pool, k)
-				continue
-			}
-			// The first element is the oldest, so we only check that.
-			e := v[0]
-			if e.added.Before(age) {
+			if len(v) > 0 && v[0].added.Before(age) {
 				oldest = k
-				age = e.added
+				age = v[0].added
 			}
 		}
 		// Invalidate and delete oldest.
 		if walks, ok := t.pool[oldest]; ok && len(walks) > 0 {
-			endCh := walks[0].endTimerCh
-			endWalkCh := walks[0].endWalkCh
+			close(walks[0].endWalkCh)
 			if len(walks) > 1 {
-				// Move walks forward
-				copy(walks, walks[1:])
-				walks = walks[:len(walks)-1]
-				t.pool[oldest] = walks
+				t.pool[oldest] = walks[1:]
 			} else {
-				// Only entry, just delete.
 				delete(t.pool, oldest)
 			}
-			select {
-			case endCh <- struct{}{}:
-				close(endWalkCh)
-			default:
-			}
-		} else {
-			// Shouldn't happen, but just in case.
-			delete(t.pool, oldest)
 		}
 	}
 
-	// Should be a buffered channel so that Release() never blocks.
-	endTimerCh := make(chan struct{}, 1)
 	walkInfo := treeWalk{
-		added:      UTCNow(),
-		resultCh:   resultCh,
-		endWalkCh:  endWalkCh,
-		endTimerCh: endTimerCh,
+		added:     UTCNow(),
+		resultCh:  resultCh,
+		endWalkCh: endWalkCh,
 	}
 
 	// Append new walk info.
 	walks := t.pool[params]
-	if len(walks) < treeWalkSameEntryLimit {
-		t.pool[params] = append(walks, walkInfo)
-	} else {
-		// We are at limit, invalidate oldest, move list down and add new as last.
-		select {
-		case walks[0].endTimerCh <- struct{}{}:
-			close(walks[0].endWalkCh)
-		default:
-		}
-		copy(walks, walks[1:])
-		walks[len(walks)-1] = walkInfo
+	if len(walks) >= treeWalkSameEntryLimit {
+		close(walks[0].endWalkCh)
+		walks = walks[1:]
 	}
+	t.pool[params] = append(walks, walkInfo)
+}
 
-	// Timer go-routine which times out after t.timeOut seconds.
-	go func(endTimerCh <-chan struct{}, walkInfo treeWalk) {
-		select {
-		// Wait until timeOut
-		case <-time.After(t.timeOut):
-			// Timeout has expired. Remove the treeWalk from treeWalkPool and
-			// end the treeWalk go-routine.
-			t.mu.Lock()
-			defer t.mu.Unlock()
-			walks, ok := t.pool[params]
-			if ok {
-				// Trick of filtering without allocating
-				// https://github.com/golang/go/wiki/SliceTricks#filtering-without-allocating
-				nwalks := walks[:0]
-				// Look for walkInfo, remove it from the walks list.
-				for _, walk := range walks {
-					if !reflect.DeepEqual(walk, walkInfo) {
-						nwalks = append(nwalks, walk)
-					}
-				}
-				if len(nwalks) == 0 {
-					// No more treeWalk go-routines associated with listParams
-					// hence remove map entry.
-					delete(t.pool, params)
+func (t *TreeWalkPool) cleanup() {
+	for {
+		t.mu.Lock()
+		for k, v := range t.pool {
+			if len(v) > 0 && v[0].added.Add(t.timeOut).Before(UTCNow()) {
+				close(v[0].endWalkCh)
+				if len(v) > 1 {
+					t.pool[k] = v[1:]
 				} else {
-					// There are more treeWalk go-routines associated with listParams
-					// hence save the list in the map.
-					t.pool[params] = nwalks
+					delete(t.pool, k)
 				}
 			}
-			// Signal the treeWalk go-routine to die.
-			close(endWalkCh)
-		case <-endTimerCh:
-			return
 		}
-	}(endTimerCh, walkInfo)
+		t.mu.Unlock()
+		time.Sleep(t.timeOut / 10)
+	}
 }

@@ -24,7 +24,7 @@ import (
 
 type Entry struct {
 	Name string
-	Info *ObjectInfo
+	Info any
 }
 
 // TreeWalkResult - Tree walk result carries results of tree walking.
@@ -155,6 +155,9 @@ func doTreeWalk(ctx context.Context, bucket, prefixDir, entryPrefixMatch, marker
 
 	for i, entry := range entries {
 		var leaf, leafDir bool
+		if i > 0 {
+			entries[i-1] = nil // free memory
+		}
 		if i == 0 && entry.Name == "" {
 			select {
 			case <-endWalkCh:
