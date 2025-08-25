@@ -349,12 +349,12 @@ func listObjects(ctx context.Context, obj ObjectLayer, bucket, prefix, marker, d
 		return loi, err
 	}
 	// Copy found objects
-	objInfos := make([]ObjectInfo, 0, i+1)
+	objInfos := make([]*ObjectInfo, 0, i+1)
 	for _, objInfo := range objInfoFound {
 		if objInfo == nil {
 			continue
 		}
-		objInfos = append(objInfos, *objInfo)
+		objInfos = append(objInfos, objInfo)
 		nextMarker = objInfo.Name
 	}
 
@@ -365,12 +365,13 @@ func listObjects(ctx context.Context, obj ObjectLayer, bucket, prefix, marker, d
 	}
 
 	result := ListObjectsInfo{}
+	result.Objects = make([]ObjectInfo, 0, len(objInfos))
 	for _, objInfo := range objInfos {
 		if objInfo.IsDir && delimiter == SlashSeparator && objInfo.Name != prefix {
 			result.Prefixes = append(result.Prefixes, objInfo.Name)
 			continue
 		}
-		result.Objects = append(result.Objects, objInfo)
+		result.Objects = append(result.Objects, *objInfo)
 	}
 
 	if !eof {
