@@ -19,6 +19,7 @@ package cmd
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -39,6 +40,8 @@ import (
 	"github.com/minio/minio/pkg/event"
 	"github.com/minio/minio/pkg/hash"
 )
+
+var ErrInvalidEtag = errors.New("ErrInvalidEtag")
 
 // APIError structure
 type APIError struct {

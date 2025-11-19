@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -3054,6 +3055,9 @@ func (api objectAPIHandlers) CompleteMultipartUploadHandler(w http.ResponseWrite
 	// can cause white space to be written after we send XML response in a race condition.
 	headerWritten := <-completeDoneCh
 	if err != nil {
+		if errors.Is(err, ErrInvalidEtag) {
+			writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrInvalidPart), r.URL, guessIsBrowserReq(r))
+		}
 		if headerWritten {
 			writeErrorResponseWithoutXMLHeader(ctx, w, toAPIError(ctx, err), r.URL)
 		} else {
