@@ -3057,8 +3057,7 @@ func (api objectAPIHandlers) CompleteMultipartUploadHandler(w http.ResponseWrite
 	if err != nil {
 		if errors.Is(err, ErrInvalidEtag) {
 			writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrInvalidPart), r.URL, guessIsBrowserReq(r))
-		}
-		if headerWritten {
+		} else if headerWritten {
 			writeErrorResponseWithoutXMLHeader(ctx, w, toAPIError(ctx, err), r.URL)
 		} else {
 			writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
