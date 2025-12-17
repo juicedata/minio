@@ -15,10 +15,13 @@
 package etag
 
 import (
-	"crypto/md5"
+	"bufio"
 	"fmt"
-	"hash"
 	"io"
+	"sync"
+	"sync/atomic"
+
+	md5simd "github.com/minio/md5-simd"
 )
 
 // Tagger is the interface that wraps the basic ETag method.
@@ -72,6 +75,28 @@ func Wrap(wrapped, content io.Reader) io.Reader {
 	}
 }
 
+type bufferedHasher interface {
+	md5simd.Hasher
+	Flush() error
+}
+
+type md5Hash struct {
+	md5simd.Hasher
+	*bufio.Writer
+}
+
+func (h *md5Hash) Reset() {
+	h.Hasher.Reset()
+}
+
+func (h *md5Hash) Size() int {
+	return h.Writer.Size()
+}
+
+func (h *md5Hash) Write(p []byte) (n int, err error) {
+	return h.Writer.Write(p)
+}
+
 // A Reader wraps an io.Reader and computes the
 // MD5 checksum of the read content as ETag.
 //
@@ -86,10 +111,25 @@ func Wrap(wrapped, content io.Reader) io.Reader {
 type Reader struct {
 	src io.Reader
 
-	md5      hash.Hash
+	md5      bufferedHasher
 	checksum ETag
 
 	readN int64
+}
+
+var once sync.Once
+var md5s []md5simd.Server
+var md5Counter atomic.Int64
+
+func getMD5Server() md5simd.Server {
+	md5Counter.Add(1)
+	once.Do(func() {
+		for i := 0; i < 8; i++ {
+			md5s = append(md5s, md5simd.NewServer())
+		}
+	})
+	idx := md5Counter.Load() % 8
+	return md5s[idx]
 }
 
 // NewReader returns a new Reader that computes the
@@ -104,9 +144,13 @@ func NewReader(r io.Reader, etag ETag) *Reader {
 			return er
 		}
 	}
+	svc := getMD5Server()
+	h := svc.NewHash()
+	h.Reset()
+	hash := md5Hash{h, bufio.NewWriterSize(h,32<<10)}
 	return &Reader{
-		src:      r,
-		md5:      md5.New(),
+		src: r,
+		md5:      &hash,
 		checksum: etag,
 	}
 }
@@ -134,7 +178,9 @@ func (r *Reader) Read(p []byte) (int, error) {
 // checksum. Therefore, calling ETag multiple
 // times may return different results.
 func (r *Reader) ETag() ETag {
+	_ = r.md5.Flush()
 	sum := r.md5.Sum(nil)
+	defer r.md5.Close()
 	return ETag(sum)
 }
 
