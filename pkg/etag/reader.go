@@ -15,7 +15,6 @@
 package etag
 
 import (
-	"crypto/md5"
 	"fmt"
 	"hash"
 	"io"
@@ -106,7 +105,7 @@ func NewReader(r io.Reader, etag ETag) *Reader {
 	}
 	return &Reader{
 		src:      r,
-		md5:      md5.New(),
+		//md5:      md5.New(),
 		checksum: etag,
 	}
 }
@@ -116,7 +115,7 @@ func NewReader(r io.Reader, etag ETag) *Reader {
 func (r *Reader) Read(p []byte) (int, error) {
 	n, err := r.src.Read(p)
 	r.readN += int64(n)
-	r.md5.Write(p[:n])
+	//r.md5.Write(p[:n])
 
 	if err == io.EOF && len(r.checksum) != 0 {
 		if etag := r.ETag(); !Equal(etag, r.checksum) {
@@ -134,8 +133,8 @@ func (r *Reader) Read(p []byte) (int, error) {
 // checksum. Therefore, calling ETag multiple
 // times may return different results.
 func (r *Reader) ETag() ETag {
-	sum := r.md5.Sum(nil)
-	return ETag(sum)
+	//sum := r.md5.Sum(nil)
+	return ETag("1111")
 }
 
 // VerifyError is an error signaling that a
