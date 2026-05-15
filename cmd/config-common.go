@@ -70,12 +70,6 @@ func saveConfig(ctx context.Context, objAPI ObjectLayer, configFile string, data
 	}
 
 	_, err = objAPI.PutObject(ctx, MinioMetaBucket, configFile, NewPutObjReader(hashReader), ObjectOptions{MaxParity: true})
-	if errors.As(err, &BucketNotFound{}) {
-		if err := objAPI.MakeBucketWithLocation(ctx, MinioMetaBucket, BucketOptions{}); err != nil {
-			return err
-		}
-		_, err = objAPI.PutObject(ctx, MinioMetaBucket, configFile, NewPutObjReader(hashReader), ObjectOptions{})
-	}
 	return err
 }
 
