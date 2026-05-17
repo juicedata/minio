@@ -912,10 +912,17 @@ func (sys *IAMSys) ListUsers() (map[string]madmin.UserInfo, error) {
 		return nil, errServerNotInitialized
 	}
 
-	if sys.usersSysType != MinIOUsersSysType {
+	switch sys.usersSysType {
+	case MinIOUsersSysType:
+		return sys.listMinIOUsers()
+	case LDAPUsersSysType:
+		return sys.listLDAPUsers()
+	default:
 		return nil, errIAMActionNotAllowed
 	}
+}
 
+func (sys *IAMSys) listMinIOUsers() (map[string]madmin.UserInfo, error) {
 	<-sys.configLoaded
 
 	sys.Lock()
@@ -934,6 +941,32 @@ func (sys *IAMSys) ListUsers() (map[string]madmin.UserInfo, error) {
 					return madmin.AccountDisabled
 				}(),
 			}
+		}
+	}
+
+	return users, nil
+}
+
+func (sys *IAMSys) listLDAPUsers() (map[string]madmin.UserInfo, error) {
+	<-sys.configLoaded
+
+	policyMap := make(map[string]MappedPolicy)
+	if err := sys.store.loadMappedPolicies(context.Background(), stsUser, false, policyMap); err != nil {
+		return nil, err
+	}
+
+	users := make(map[string]madmin.UserInfo)
+	for k, v := range policyMap {
+		users[k] = madmin.UserInfo{
+			PolicyName: v.Policies,
+			Status:     madmin.AccountEnabled,
+		}
+	}
+
+	// remove temp users created via STS
+	for k, v := range sys.iamUsersMap {
+		if v.IsTemp() || v.IsServiceAccount() {
+			delete(users, k)
 		}
 	}
 
@@ -1008,6 +1041,7 @@ func (sys *IAMSys) GetUserInfo(name string) (u madmin.UserInfo, err error) {
 		}
 		return madmin.UserInfo{
 			PolicyName: mappedPolicy.Policies,
+			Status:     madmin.AccountEnabled,
 			MemberOf:   memberships.ToSlice(),
 		}, nil
 	}
@@ -1808,17 +1842,40 @@ func (sys *IAMSys) ListGroups() (r []string, err error) {
 		return r, errServerNotInitialized
 	}
 
-	if sys.usersSysType != MinIOUsersSysType {
-		return nil, errIAMActionNotAllowed
+	switch sys.usersSysType {
+	case MinIOUsersSysType:
+		return sys.listMinIOGroups()
+	case LDAPUsersSysType:
+		return sys.listLDAPGroups()
+	default:
+		return r, errIAMActionNotAllowed
 	}
+}
 
+func (sys *IAMSys) listMinIOGroups() ([]string, error) {
 	<-sys.configLoaded
 
 	sys.Lock()
 	defer sys.Unlock()
 
-	r = make([]string, 0, len(sys.iamGroupsMap))
+	r := make([]string, 0, len(sys.iamGroupsMap))
 	for k := range sys.iamGroupsMap {
+		r = append(r, k)
+	}
+
+	return r, nil
+}
+
+func (sys *IAMSys) listLDAPGroups() ([]string, error) {
+	<-sys.configLoaded
+
+	policyMap := make(map[string]MappedPolicy)
+	if err := sys.store.loadMappedPolicies(context.Background(), stsUser, true, policyMap); err != nil {
+		return nil, err
+	}
+
+	r := make([]string, 0, len(policyMap))
+	for k := range policyMap {
 		r = append(r, k)
 	}
 
@@ -2132,13 +2189,13 @@ func (sys *IAMSys) IsAllowedLDAPSTS(args iampolicy.Args, parentUser string) bool
 	}
 
 	// Check policy for this LDAP user.
-	ldapPolicies, err := sys.PolicyDBGet(parentUser, false, args.Groups...)
-	if err != nil {
-		return false
-	}
-
+	ldapPolicies, _ := sys.policyDBGet(args.AccountName, false)
 	if len(ldapPolicies) == 0 {
-		return false
+		parentPolicies, err := sys.PolicyDBGet(parentUser, false, args.Groups...)
+		if err != nil {
+			return false
+		}
+		ldapPolicies = parentPolicies
 	}
 
 	var availablePolicies []iampolicy.Policy
