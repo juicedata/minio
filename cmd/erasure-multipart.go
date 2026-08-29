@@ -862,6 +862,30 @@ func (er erasureObjects) CompleteMultipartUpload(ctx context.Context, bucket str
 	// Save the consolidated actual size.
 	fi.Metadata[ReservedMetadataPrefix+"actual-size"] = strconv.FormatInt(objectActualSize, 10)
 
+	var commitUnlock func()
+	ctx, commitUnlock, err = prepareForCommit(ctx)
+	if err != nil {
+		return oi, err
+	}
+	defer commitUnlock()
+
+	// Hold the destination lock before changing the multipart upload. This keeps a
+	// failed conditional completion retryable with the same upload ID and parts.
+	if !opts.NoLock {
+		lk := er.NewNSLock(bucket, object)
+		ctx, err = lk.GetLock(ctx, globalOperationTimeout)
+		if err != nil {
+			return oi, err
+		}
+		defer lk.Unlock()
+	}
+
+	if err = checkIfNoneMatch(opts, func() (ObjectInfo, error) {
+		return er.getObjectInfo(ctx, bucket, object, withNoLock(opts))
+	}); err != nil {
+		return oi, err
+	}
+
 	// Update all erasure metadata, make sure to not modify fields like
 	// checksum which are different on each disks.
 	for index := range partsMetadata {
@@ -890,14 +914,6 @@ func (er erasureObjects) CompleteMultipartUpload(ctx context.Context, bucket str
 			er.removeObjectPart(bucket, object, uploadID, fi.DataDir, curpart.Number)
 		}
 	}
-
-	// Hold namespace to complete the transaction
-	lk := er.NewNSLock(bucket, object)
-	ctx, err = lk.GetLock(ctx, globalOperationTimeout)
-	if err != nil {
-		return oi, err
-	}
-	defer lk.Unlock()
 
 	// Rename the multipart object to final location.
 	if onlineDisks, err = renameData(ctx, onlineDisks, minioMetaMultipartBucket, uploadIDPath,

@@ -1901,6 +1901,8 @@ func toAPIErrorCode(ctx context.Context, err error) (apiErr APIErrorCode) {
 		apiErr = ErrNoSuchVersion
 	case ObjectAlreadyExists:
 		apiErr = ErrMethodNotAllowed
+	case PreConditionFailed:
+		apiErr = ErrPreconditionFailed
 	case ObjectNameInvalid:
 		apiErr = ErrInvalidObjectName
 	case ObjectNamePrefixAsSlash:

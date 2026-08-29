@@ -803,25 +803,46 @@ var (
 	getRemoteInstanceTransportOnce sync.Once
 )
 
-// Returns a minio-go Client configured to access remote host described by destDNSRecord
-// Applicable only in a federated deployment
-var getRemoteInstanceClient = func(r *http.Request, host string) (*miniogo.Core, error) {
+type ifNoneMatchTransport struct {
+	base http.RoundTripper
+}
+
+func (t ifNoneMatchTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	transport := t.base
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	query := req.URL.Query()
+	isSinglePut := req.Method == http.MethodPut && query.Get(xhttp.UploadID) == ""
+	isMultipartComplete := req.Method == http.MethodPost && query.Get(xhttp.UploadID) != ""
+	if !isSinglePut && !isMultipartComplete {
+		return transport.RoundTrip(req)
+	}
+	conditionalReq := req.Clone(req.Context())
+	conditionalReq.Header = req.Header.Clone()
+	conditionalReq.Header.Set(xhttp.IfNoneMatch, "*")
+	return transport.RoundTrip(conditionalReq)
+}
+
+func newRemoteInstanceClient(r *http.Request, host string, transport http.RoundTripper) (*miniogo.Core, error) {
 	if newObjectLayerFn() == nil {
 		return nil, errServerNotInitialized
 	}
 
 	cred := getReqAccessCred(r, globalServerRegion)
-	// In a federated deployment, all the instances share config files
-	// and hence expected to have same credentials.
-	core, err := miniogo.NewCore(host, &miniogo.Options{
+	return miniogo.NewCore(host, &miniogo.Options{
 		Creds:     credentials.NewStaticV4(cred.AccessKey, cred.SecretKey, ""),
 		Secure:    globalIsTLS,
-		Transport: getRemoteInstanceTransport,
+		Transport: transport,
 	})
-	if err != nil {
-		return nil, err
-	}
-	return core, nil
+}
+
+// Returns a minio-go Client configured to access remote host described by destDNSRecord
+// Applicable only in a federated deployment
+var getRemoteInstanceClient = func(r *http.Request, host string) (*miniogo.Core, error) {
+	// In a federated deployment, all the instances share config files
+	// and hence expected to have same credentials.
+	return newRemoteInstanceClient(r, host, getRemoteInstanceTransport)
 }
 
 // Check if the destination bucket is on a remote site, this code only gets executed
@@ -982,6 +1003,12 @@ func (api objectAPIHandlers) CopyObjectHandler(w http.ResponseWriter, r *http.Re
 		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
 		return
 	}
+	ifNoneMatch, s3Error := parseIfNoneMatchHeader(r)
+	if s3Error != ErrNone {
+		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(s3Error), r.URL, guessIsBrowserReq(r))
+		return
+	}
+	dstOpts.IfNoneMatch = ifNoneMatch
 	cpSrcDstSame := isStringEqual(pathJoin(srcBucket, srcObject), pathJoin(dstBucket, dstObject))
 
 	getObjectNInfo := objectAPI.GetObjectNInfo
@@ -1314,7 +1341,14 @@ func (api objectAPIHandlers) CopyObjectHandler(w http.ResponseWriter, r *http.Re
 		}
 
 		// Send PutObject request to appropriate instance (in federated deployment)
-		core, rerr := getRemoteInstanceClient(r, getHostFromSrv(dstRecords))
+		var core *miniogo.Core
+		var rerr error
+		if dstOpts.IfNoneMatch {
+			remoteTransport := ifNoneMatchTransport{base: getRemoteInstanceTransport}
+			core, rerr = newRemoteInstanceClient(r, getHostFromSrv(dstRecords), remoteTransport)
+		} else {
+			core, rerr = getRemoteInstanceClient(r, getHostFromSrv(dstRecords))
+		}
 		if rerr != nil {
 			writeErrorResponse(ctx, w, toAPIError(ctx, rerr), r.URL, guessIsBrowserReq(r))
 			return
@@ -1582,6 +1616,11 @@ func (api objectAPIHandlers) PutObjectHandler(w http.ResponseWriter, r *http.Req
 	opts, err = putOpts(ctx, r, bucket, object, metadata)
 	if err != nil {
 		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
+		return
+	}
+	opts.IfNoneMatch, s3Err = parseIfNoneMatchHeader(r)
+	if s3Err != ErrNone {
+		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(s3Err), r.URL, guessIsBrowserReq(r))
 		return
 	}
 
@@ -2930,6 +2969,18 @@ func (api objectAPIHandlers) CompleteMultipartUploadHandler(w http.ResponseWrite
 		return
 	}
 
+	ifNoneMatch, s3Error := parseIfNoneMatchHeader(r)
+	if s3Error != ErrNone {
+		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(s3Error), r.URL, guessIsBrowserReq(r))
+		return
+	}
+	if cacheAPI := api.CacheAPI(); ifNoneMatch && cacheAPI != nil && cacheAPI.IsWriteBackEnabled() {
+		// Multipart completion bypasses CacheObjectLayer. Reject it here because
+		// pending write-back state is node-local and cannot be checked safely.
+		writeErrorResponse(ctx, w, toAPIError(ctx, BackendDown{}), r.URL, guessIsBrowserReq(r))
+		return
+	}
+
 	// Content-Length is required and should be non-zero
 	if r.ContentLength <= 0 {
 		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrMissingContentLength), r.URL, guessIsBrowserReq(r))
@@ -3050,7 +3101,12 @@ func (api objectAPIHandlers) CompleteMultipartUploadHandler(w http.ResponseWrite
 
 	w = &whiteSpaceWriter{ResponseWriter: w, Flusher: w.(http.Flusher)}
 	completeDoneCh := sendWhiteSpace(w)
-	objInfo, err := completeMultiPartUpload(ctx, bucket, object, uploadID, completeParts, ObjectOptions{})
+	completeOpts := ObjectOptions{
+		IfNoneMatch:      ifNoneMatch,
+		Versioned:        globalBucketVersioningSys.Enabled(bucket),
+		VersionSuspended: globalBucketVersioningSys.Suspended(bucket),
+	}
+	objInfo, err := completeMultiPartUpload(ctx, bucket, object, uploadID, completeParts, completeOpts)
 	// Stop writing white spaces to the client. Note that close(doneCh) style is not used as it
 	// can cause white space to be written after we send XML response in a race condition.
 	headerWritten := <-completeDoneCh

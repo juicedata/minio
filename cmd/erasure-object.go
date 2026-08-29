@@ -62,13 +62,27 @@ func (er erasureObjects) CopyObject(ctx context.Context, srcBucket, srcObject, d
 	}
 
 	defer ObjectPathUpdated(pathJoin(dstBucket, dstObject))
-
-	lk := er.NewNSLock(dstBucket, dstObject)
-	ctx, err = lk.GetLock(ctx, globalOperationTimeout)
+	var commitUnlock func()
+	ctx, commitUnlock, err = prepareForCommit(ctx)
 	if err != nil {
 		return oi, err
 	}
-	defer lk.Unlock()
+	defer commitUnlock()
+
+	if !dstOpts.NoLock {
+		lk := er.NewNSLock(dstBucket, dstObject)
+		ctx, err = lk.GetLock(ctx, globalOperationTimeout)
+		if err != nil {
+			return oi, err
+		}
+		defer lk.Unlock()
+	}
+
+	if err = checkIfNoneMatch(dstOpts, func() (ObjectInfo, error) {
+		return er.getObjectInfo(ctx, dstBucket, dstObject, withNoLock(dstOpts))
+	}); err != nil {
+		return oi, err
+	}
 
 	// Read metadata associated with the object from all disks.
 	storageDisks := er.getDisks()
@@ -406,10 +420,10 @@ func (er erasureObjects) getObjectFileInfo(ctx context.Context, bucket, object s
 					reducedErr = errFileVersionNotFound
 				}
 				// Remove the dangling object only when:
-				//  - This is a non versioned bucket
-				//  - This is a versioned bucket and the version ID is passed, the reason
+				//  - This bucket has never been versioned
+				//  - This is a versioned or suspended bucket and the version ID is passed, the reason
 				//    is that we cannot fetch the ID of the latest version when we don't trust xl.meta
-				if !opts.Versioned || opts.VersionID != "" {
+				if (!opts.Versioned && !opts.VersionSuspended) || opts.VersionID != "" {
 					er.deleteObjectVersion(ctx, bucket, object, 1, FileInfo{
 						Name:      object,
 						VersionID: opts.VersionID,
@@ -738,6 +752,13 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 		return ObjectInfo{}, IncompleteBody{Bucket: bucket, Object: object}
 	}
 
+	var commitUnlock func()
+	ctx, commitUnlock, err = prepareForCommit(ctx)
+	if err != nil {
+		return ObjectInfo{}, err
+	}
+	defer commitUnlock()
+
 	if !opts.NoLock {
 		var err error
 		lk := er.NewNSLock(bucket, object)
@@ -746,6 +767,12 @@ func (er erasureObjects) putObject(ctx context.Context, bucket string, object st
 			return ObjectInfo{}, err
 		}
 		defer lk.Unlock()
+	}
+
+	if err = checkIfNoneMatch(opts, func() (ObjectInfo, error) {
+		return er.getObjectInfo(ctx, bucket, object, withNoLock(opts))
+	}); err != nil {
+		return ObjectInfo{}, err
 	}
 
 	for i, w := range writers {

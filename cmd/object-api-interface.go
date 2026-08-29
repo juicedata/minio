@@ -43,6 +43,7 @@ type ObjectOptions struct {
 	VersionID            string    // Specifies the versionID which needs to be overwritten or read
 	MTime                time.Time // Is only set in POST/PUT operations
 	Expires              time.Time // Is only used in POST/PUT operations
+	IfNoneMatch          bool      // Prevents overwriting an existing object in conditional write operations
 
 	DeleteMarker                  bool                                                  // Is only set in DELETE operations for delete marker replication
 	UserDefined                   map[string]string                                     // only set in case of POST/PUT operations

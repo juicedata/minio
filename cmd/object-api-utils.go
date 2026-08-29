@@ -75,6 +75,43 @@ const (
 	compReadAheadBufSize = 1 << 20
 )
 
+// checkIfNoneMatch returns a precondition error when an object already exists.
+// The caller must hold the destination object's write lock.
+func checkIfNoneMatch(opts ObjectOptions, getObjectInfo func() (ObjectInfo, error)) error {
+	if !opts.IfNoneMatch {
+		return nil
+	}
+
+	_, err := getObjectInfo()
+	if err == nil {
+		return PreConditionFailed{}
+	}
+	if errors.Is(err, errFileNotFound) || isErrObjectNotFound(err) {
+		return nil
+	}
+	return err
+}
+
+func withNoLock(opts ObjectOptions) ObjectOptions {
+	opts.NoLock = true
+	return opts
+}
+
+type prepareForCommitFn func(ctx context.Context) (context.Context, func(), error)
+type prepareForCommitKey struct{}
+
+func withPrepareForCommit(ctx context.Context, fn prepareForCommitFn) context.Context {
+	return context.WithValue(ctx, prepareForCommitKey{}, fn)
+}
+
+func prepareForCommit(ctx context.Context) (context.Context, func(), error) {
+	fn, _ := ctx.Value(prepareForCommitKey{}).(prepareForCommitFn)
+	if fn == nil {
+		return ctx, func() {}, nil
+	}
+	return fn(ctx)
+}
+
 // isMinioBucket returns true if given bucket is a MinIO internal
 // bucket and false otherwise.
 func isMinioMetaBucketName(bucket string) bool {

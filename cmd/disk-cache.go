@@ -82,6 +82,7 @@ type CacheObjectLayer interface {
 	// Storage operations.
 	StorageInfo(ctx context.Context) CacheStorageInfo
 	CacheStats() *CacheStats
+	IsWriteBackEnabled() bool
 }
 
 // Abstracts disk caching - used by the S3 layer
@@ -435,10 +436,25 @@ func (c *cacheObjects) GetObjectInfo(ctx context.Context, bucket, object string,
 // CopyObject reverts to backend after evicting any stale cache entries
 func (c *cacheObjects) CopyObject(ctx context.Context, srcBucket, srcObject, dstBucket, dstObject string, srcInfo ObjectInfo, srcOpts, dstOpts ObjectOptions) (objInfo ObjectInfo, err error) {
 	copyObjectFn := c.InnerCopyObjectFn
-	if c.isCacheExclude(srcBucket, srcObject) || c.skipCache() {
-		return copyObjectFn(ctx, srcBucket, srcObject, dstBucket, dstObject, srcInfo, srcOpts, dstOpts)
+	if c.commitWriteback && dstOpts.IfNoneMatch {
+		// Pending write-back state and cache namespace locks are node-local.
+		// No node can safely prove that another node has not already accepted
+		// a write for this destination, so fail instead of risking overwrite.
+		return ObjectInfo{}, BackendDown{}
 	}
 	if srcBucket != dstBucket || srcObject != dstObject {
+		objInfo, err = copyObjectFn(ctx, srcBucket, srcObject, dstBucket, dstObject, srcInfo, srcOpts, dstOpts)
+		if err != nil {
+			return objInfo, err
+		}
+		if dcache, cacheErr := c.getCacheToLoc(ctx, dstBucket, dstObject); cacheErr == nil {
+			// A successful backend copy replaces the destination independently
+			// of the source cache state. Do not serve a stale destination entry.
+			_ = dcache.Delete(ctx, dstBucket, dstObject)
+		}
+		return objInfo, nil
+	}
+	if c.isCacheExclude(srcBucket, srcObject) || c.skipCache() {
 		return copyObjectFn(ctx, srcBucket, srcObject, dstBucket, dstObject, srcInfo, srcOpts, dstOpts)
 	}
 	// fetch diskCache if object is currently cached or nearest available cache drive
@@ -478,6 +494,10 @@ func (c *cacheObjects) StorageInfo(ctx context.Context) (cInfo CacheStorageInfo)
 // CacheStats - returns underlying storage statistics.
 func (c *cacheObjects) CacheStats() (cs *CacheStats) {
 	return c.cacheStats
+}
+
+func (c *cacheObjects) IsWriteBackEnabled() bool {
+	return c.commitWriteback
 }
 
 // skipCache() returns true if cache migration is in progress
@@ -622,6 +642,12 @@ func (c *cacheObjects) migrateCacheFromV1toV2(ctx context.Context) {
 // PutObject - caches the uploaded object for single Put operations
 func (c *cacheObjects) PutObject(ctx context.Context, bucket, object string, r *PutObjReader, opts ObjectOptions) (objInfo ObjectInfo, err error) {
 	putObjectFn := c.InnerPutObjectFn
+	if c.commitWriteback && opts.IfNoneMatch {
+		// Pending write-back state and cache namespace locks are node-local.
+		// No node can safely prove that another node has not already accepted
+		// a write for this object, so fail instead of risking overwrite.
+		return ObjectInfo{}, BackendDown{}
+	}
 	dcache, err := c.getCacheToLoc(ctx, bucket, object)
 	if err != nil {
 		// disk cache could not be located,execute backend call.

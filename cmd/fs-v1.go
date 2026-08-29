@@ -607,13 +607,19 @@ func (fs *FSObjects) CopyObject(ctx context.Context, srcBucket, srcObject, dstBu
 	cpSrcDstSame := isStringEqual(pathJoin(srcBucket, srcObject), pathJoin(dstBucket, dstObject))
 	defer ObjectPathUpdated(path.Join(dstBucket, dstObject))
 
-	if !cpSrcDstSame {
+	if !cpSrcDstSame || dstOpts.IfNoneMatch {
 		objectDWLock := fs.NewNSLock(dstBucket, dstObject)
 		ctx, err = objectDWLock.GetLock(ctx, globalOperationTimeout)
 		if err != nil {
 			return oi, err
 		}
 		defer objectDWLock.Unlock()
+	}
+
+	if err = checkIfNoneMatch(dstOpts, func() (ObjectInfo, error) {
+		return fs.getObjectInfo(ctx, dstBucket, dstObject)
+	}); err != nil {
+		return oi, err
 	}
 
 	atomic.AddInt64(&fs.activeIOCount, 1)
@@ -1080,6 +1086,12 @@ func (fs *FSObjects) PutObject(ctx context.Context, bucket string, object string
 	}
 	defer lk.Unlock()
 	defer ObjectPathUpdated(path.Join(bucket, object))
+
+	if err = checkIfNoneMatch(opts, func() (ObjectInfo, error) {
+		return fs.getObjectInfo(ctx, bucket, object)
+	}); err != nil {
+		return objInfo, err
+	}
 
 	atomic.AddInt64(&fs.activeIOCount, 1)
 	defer func() {

@@ -17,6 +17,9 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
+	"os"
 	"testing"
 	"time"
 )
@@ -69,5 +72,76 @@ func TestCacheExclusion(t *testing.T) {
 		if cobjects.isCacheExclude(testCase.bucketName, testCase.objectName) != testCase.expectedResult {
 			t.Fatal("Cache exclusion test failed for case ", i)
 		}
+	}
+}
+
+func TestCacheWriteBackRejectsConditionalWrites(t *testing.T) {
+	backendCalls := 0
+	cobjects := &cacheObjects{
+		commitWriteback: true,
+		InnerPutObjectFn: func(ctx context.Context, bucket, object string, data *PutObjReader, opts ObjectOptions) (ObjectInfo, error) {
+			backendCalls++
+			return ObjectInfo{}, nil
+		},
+		InnerCopyObjectFn: func(ctx context.Context, srcBucket, srcObject, dstBucket, dstObject string, srcInfo ObjectInfo, srcOpts, dstOpts ObjectOptions) (ObjectInfo, error) {
+			backendCalls++
+			return ObjectInfo{}, nil
+		},
+	}
+
+	data := []byte("conditional")
+	_, err := cobjects.PutObject(context.Background(), "bucket", "object",
+		mustGetPutObjReader(t, bytes.NewReader(data), int64(len(data)), "", ""),
+		ObjectOptions{IfNoneMatch: true})
+	if !backendDownError(err) {
+		t.Fatalf("expected write-back conditional PUT to fail safely, got %v", err)
+	}
+
+	_, err = cobjects.CopyObject(context.Background(), "source-bucket", "source", "destination-bucket", "destination",
+		ObjectInfo{}, ObjectOptions{}, ObjectOptions{IfNoneMatch: true})
+	if !backendDownError(err) {
+		t.Fatalf("expected write-back conditional COPY to fail safely, got %v", err)
+	}
+	if backendCalls != 0 {
+		t.Fatalf("conditional writes reached backend %d times", backendCalls)
+	}
+}
+
+func TestCacheCopyObjectInvalidatesDestinationAfterBackendSuccess(t *testing.T) {
+	ctx := context.Background()
+	const (
+		destinationBucket = "destination-bucket"
+		destinationObject = "destination"
+	)
+
+	cacheRoot := t.TempDir()
+	cacheLock := NewNSLock(false)
+	dcache := &diskCache{dir: cacheRoot, online: 1}
+	dcache.NewNSLockFn = func(cachePath string) RWLocker {
+		return cacheLock.NewNSLock(nil, cachePath, "")
+	}
+	if err := os.MkdirAll(getCacheSHADir(cacheRoot, destinationBucket, destinationObject), 0777); err != nil {
+		t.Fatal(err)
+	}
+
+	backendCalls := 0
+	cobjects := &cacheObjects{
+		cache: []*diskCache{dcache},
+		InnerCopyObjectFn: func(ctx context.Context, srcBucket, srcObject, dstBucket, dstObject string, srcInfo ObjectInfo, srcOpts, dstOpts ObjectOptions) (ObjectInfo, error) {
+			backendCalls++
+			return ObjectInfo{Bucket: dstBucket, Name: dstObject}, nil
+		},
+	}
+
+	_, err := cobjects.CopyObject(ctx, "source-bucket", "source", destinationBucket, destinationObject,
+		ObjectInfo{}, ObjectOptions{}, ObjectOptions{IfNoneMatch: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backendCalls != 1 {
+		t.Fatalf("expected one backend copy, got %d", backendCalls)
+	}
+	if dcache.Exists(ctx, destinationBucket, destinationObject) {
+		t.Fatal("expected successful backend copy to invalidate cached destination")
 	}
 }
