@@ -47,8 +47,6 @@ type erasureServerPools struct {
 	shutdown context.CancelFunc
 }
 
-const crossPoolCommitLockPrefix = "cross-pool-commit"
-
 func (z *erasureServerPools) SinglePool() bool {
 	return len(z.serverPools) == 1
 }
@@ -121,44 +119,6 @@ func newErasureServerPools(ctx context.Context, endpointServerPools EndpointServ
 
 func (z *erasureServerPools) NewNSLock(bucket string, objects ...string) RWLocker {
 	return z.serverPools[0].NewNSLock(bucket, objects...)
-}
-
-func (z *erasureServerPools) withCrossPoolCommit(ctx context.Context, bucket, object string, targetPool *int, opts ObjectOptions) context.Context {
-	checkOpts := opts
-	checkOpts.NoLock = false
-
-	return withPrepareForCommit(ctx, func(ctx context.Context) (context.Context, func(), error) {
-		// Use a separate lock resource so request-body staging does not block
-		// destination readers. All writers acquire this before their pool lock.
-		lk := z.NewNSLock(MinioMetaBucket, pathJoin(crossPoolCommitLockPrefix, bucket, object))
-		lockedCtx, err := lk.GetLock(ctx, globalOperationTimeout)
-		if err != nil {
-			return ctx, nil, err
-		}
-		if err = checkIfNoneMatch(checkOpts, func() (ObjectInfo, error) {
-			return z.getObjectInfo(lockedCtx, bucket, object, checkOpts)
-		}); err != nil {
-			lk.Unlock()
-			return lockedCtx, nil, err
-		}
-
-		// Pool selection happens before request-body staging. If another writer
-		// committed to a different pool in the meantime, fail safely and let the
-		// caller retry instead of creating duplicate object histories. Multipart
-		// completion passes nil because its upload cannot be rerouted on retry.
-		if targetPool != nil {
-			currentPool, routeErr := z.getPoolIdxExistingWithOpts(lockedCtx, bucket, object, checkOpts)
-			if routeErr == nil && currentPool != *targetPool {
-				lk.Unlock()
-				return lockedCtx, nil, OperationTimedOut{}
-			}
-			if routeErr != nil && !isErrObjectNotFound(routeErr) {
-				lk.Unlock()
-				return lockedCtx, nil, routeErr
-			}
-		}
-		return lockedCtx, lk.Unlock, nil
-	})
 }
 
 // GetDisksID will return disks by their ID.
@@ -290,30 +250,19 @@ func (z *erasureServerPools) getServerPoolsAvailableSpace(ctx context.Context, s
 // If any other error is found, it is returned.
 // The check is skipped if there is only one zone, and 0, nil is always returned in that case.
 func (z *erasureServerPools) getPoolIdxExisting(ctx context.Context, bucket, object string) (idx int, err error) {
-	return z.getPoolIdxExistingWithOpts(ctx, bucket, object, ObjectOptions{})
-}
-
-func routeObjectOptions(opts ObjectOptions) ObjectOptions {
-	opts.VersionID = ""
-	opts.NoLock = false
-	return opts
-}
-
-func (z *erasureServerPools) getPoolIdxExistingWithOpts(ctx context.Context, bucket, object string, opts ObjectOptions) (idx int, err error) {
 	if z.SinglePool() {
 		return 0, nil
 	}
 
 	errs := make([]error, len(z.serverPools))
 	objInfos := make([]ObjectInfo, len(z.serverPools))
-	routeOpts := routeObjectOptions(opts)
 
 	var wg sync.WaitGroup
 	for i, pool := range z.serverPools {
 		wg.Add(1)
 		go func(i int, pool *erasureSets) {
 			defer wg.Done()
-			objInfos[i], errs[i] = pool.GetObjectInfo(ctx, bucket, object, routeOpts)
+			objInfos[i], errs[i] = pool.GetObjectInfo(ctx, bucket, object, ObjectOptions{})
 		}(i, pool)
 	}
 	wg.Wait()
@@ -342,24 +291,19 @@ func (z *erasureServerPools) getPoolIdxExistingWithOpts(ctx context.Context, buc
 // getPoolIdx returns the found previous object and its corresponding pool idx,
 // if none are found falls back to most available space pool.
 func (z *erasureServerPools) getPoolIdx(ctx context.Context, bucket, object string, size int64) (idx int, err error) {
-	return z.getPoolIdxWithOpts(ctx, bucket, object, size, ObjectOptions{})
-}
-
-func (z *erasureServerPools) getPoolIdxWithOpts(ctx context.Context, bucket, object string, size int64, opts ObjectOptions) (idx int, err error) {
 	if z.SinglePool() {
 		return 0, nil
 	}
 
 	errs := make([]error, len(z.serverPools))
 	objInfos := make([]ObjectInfo, len(z.serverPools))
-	routeOpts := routeObjectOptions(opts)
 
 	var wg sync.WaitGroup
 	for i, pool := range z.serverPools {
 		wg.Add(1)
 		go func(i int, pool *erasureSets) {
 			defer wg.Done()
-			objInfos[i], errs[i] = pool.GetObjectInfo(ctx, bucket, object, routeOpts)
+			objInfos[i], errs[i] = pool.GetObjectInfo(ctx, bucket, object, ObjectOptions{})
 		}(i, pool)
 	}
 	wg.Wait()
@@ -737,27 +681,18 @@ func (z *erasureServerPools) GetObjectInfo(ctx context.Context, bucket, object s
 		return z.serverPools[0].GetObjectInfo(ctx, bucket, object, opts)
 	}
 
-	if !opts.NoLock {
-		// Lock the object before reading.
-		lk := z.NewNSLock(bucket, object)
-		ctx, err = lk.GetRLock(ctx, globalOperationTimeout)
-		if err != nil {
-			return ObjectInfo{}, err
-		}
-		defer lk.RUnlock()
+	// Lock the object before reading.
+	lk := z.NewNSLock(bucket, object)
+	ctx, err = lk.GetRLock(ctx, globalOperationTimeout)
+	if err != nil {
+		return ObjectInfo{}, err
 	}
-
-	opts.NoLock = true // avoid taking locks at lower levels for multi-pool setups.
-	return z.getObjectInfo(ctx, bucket, object, opts)
-}
-
-// getObjectInfo searches all server pools without acquiring the top-level
-// namespace lock. The caller must hold the appropriate lock.
-func (z *erasureServerPools) getObjectInfo(ctx context.Context, bucket, object string, opts ObjectOptions) (objInfo ObjectInfo, err error) {
+	defer lk.RUnlock()
 
 	errs := make([]error, len(z.serverPools))
 	objInfos := make([]ObjectInfo, len(z.serverPools))
 
+	opts.NoLock = true // avoid taking locks at lower levels for multi-pool setups.
 	var wg sync.WaitGroup
 	for i, pool := range z.serverPools {
 		wg.Add(1)
@@ -805,12 +740,10 @@ func (z *erasureServerPools) PutObject(ctx context.Context, bucket string, objec
 		return z.serverPools[0].PutObject(ctx, bucket, object, data, opts)
 	}
 
-	opts.NoLock = false
-	idx, err := z.getPoolIdxWithOpts(ctx, bucket, object, data.Size(), opts)
+	idx, err := z.getPoolIdx(ctx, bucket, object, data.Size())
 	if err != nil {
 		return ObjectInfo{}, err
 	}
-	ctx = z.withCrossPoolCommit(ctx, bucket, object, &idx, opts)
 
 	// Overwrite the object at the right pool
 	return z.serverPools[idx].PutObject(ctx, bucket, object, data, opts)
@@ -901,16 +834,10 @@ func (z *erasureServerPools) CopyObject(ctx context.Context, srcBucket, srcObjec
 	dstObject = encodeDirObject(dstObject)
 
 	cpSrcDstSame := isStringEqual(pathJoin(srcBucket, srcObject), pathJoin(dstBucket, dstObject))
-	if !z.SinglePool() {
-		dstOpts.NoLock = false
-	}
 
-	poolIdx, err := z.getPoolIdxWithOpts(ctx, dstBucket, dstObject, srcInfo.Size, dstOpts)
+	poolIdx, err := z.getPoolIdx(ctx, dstBucket, dstObject, srcInfo.Size)
 	if err != nil {
 		return objInfo, err
-	}
-	if !z.SinglePool() {
-		ctx = z.withCrossPoolCommit(ctx, dstBucket, dstObject, &poolIdx, dstOpts)
 	}
 
 	if cpSrcDstSame && srcInfo.metadataOnly {
@@ -938,12 +865,9 @@ func (z *erasureServerPools) CopyObject(ctx context.Context, srcBucket, srcObjec
 	putOpts := ObjectOptions{
 		ServerSideEncryption: dstOpts.ServerSideEncryption,
 		UserDefined:          srcInfo.UserDefined,
-		VersionSuspended:     dstOpts.VersionSuspended,
 		Versioned:            dstOpts.Versioned,
 		VersionID:            dstOpts.VersionID,
 		MTime:                dstOpts.MTime,
-		IfNoneMatch:          dstOpts.IfNoneMatch,
-		NoLock:               dstOpts.NoLock,
 	}
 
 	return z.serverPools[poolIdx].PutObject(ctx, dstBucket, dstObject, srcInfo.PutObjReader, putOpts)
@@ -1272,9 +1196,7 @@ func (z *erasureServerPools) CompleteMultipartUpload(ctx context.Context, bucket
 	for _, pool := range z.serverPools {
 		_, err := pool.GetMultipartInfo(ctx, bucket, object, uploadID, opts)
 		if err == nil {
-			opts.NoLock = false
-			commitCtx := z.withCrossPoolCommit(ctx, bucket, object, nil, opts)
-			return pool.CompleteMultipartUpload(commitCtx, bucket, object, uploadID, uploadedParts, opts)
+			return pool.CompleteMultipartUpload(ctx, bucket, object, uploadID, uploadedParts, opts)
 		}
 	}
 

@@ -45,12 +45,6 @@ import (
 // Type to capture different modifications to API request to simulate failure cases.
 type Fault int
 
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req)
-}
-
 const (
 	None Fault = iota
 	MissingContentLength
@@ -1343,213 +1337,170 @@ func TestParseIfNoneMatchHeader(t *testing.T) {
 	}
 }
 
-func TestAPIPutObjectIfNoneMatch(t *testing.T) {
-	defer DetectTestLeak(t)()
-	ExecObjectLayerAPITest(t, testAPIPutObjectIfNoneMatch, []string{"PutObject"})
+// conditionalWriteTestLayer records write options and returns configured errors
+// for handler tests.
+type conditionalWriteTestLayer struct {
+	ObjectLayer
+	writeCalls int
+	operation  string
+	opts       ObjectOptions
+	srcOpts    ObjectOptions
+	writeErr   error
 }
 
-func TestAPICopyObjectIfNoneMatch(t *testing.T) {
-	defer DetectTestLeak(t)()
-	ExecObjectLayerAPITest(t, testAPICopyObjectIfNoneMatch, []string{"CopyObject"})
+func (l *conditionalWriteTestLayer) IsEncryptionSupported() bool { return false }
+
+func (l *conditionalWriteTestLayer) recordWrite(operation, bucket, object string, opts ObjectOptions) (ObjectInfo, error) {
+	l.writeCalls++
+	l.operation = operation
+	l.opts = opts
+	return ObjectInfo{Bucket: bucket, Name: object, ETag: "test-etag"}, l.writeErr
 }
 
-func testAPICopyObjectIfNoneMatch(obj ObjectLayer, instanceType, bucketName string, apiRouter http.Handler,
-	credentials auth.Credentials, t *testing.T) {
-	t.Helper()
+func (l *conditionalWriteTestLayer) PutObject(ctx context.Context, bucket, object string, data *PutObjReader, opts ObjectOptions) (ObjectInfo, error) {
+	return l.recordWrite("PutObject", bucket, object, opts)
+}
+
+func (l *conditionalWriteTestLayer) CopyObject(ctx context.Context, srcBucket, srcObject, dstBucket, dstObject string, srcInfo ObjectInfo, srcOpts, dstOpts ObjectOptions) (ObjectInfo, error) {
+	l.srcOpts = srcOpts
+	return l.recordWrite("CopyObject", dstBucket, dstObject, dstOpts)
+}
+
+func (l *conditionalWriteTestLayer) CompleteMultipartUpload(ctx context.Context, bucket, object, uploadID string, parts []CompletePart, opts ObjectOptions) (ObjectInfo, error) {
+	return l.recordWrite("CompleteMultipart", bucket, object, opts)
+}
+
+func TestAPIObjectIfNoneMatch(t *testing.T) {
+	defer DetectTestLeak(t)()
+	resetTestGlobals()
 	ctx := context.Background()
-	sourceData := []byte("copy source")
-	destinationData := []byte("existing destination")
-	sourceName := "if-none-match-copy-source"
-	destinationName := "if-none-match-copy-destination"
+	storage, fsDir, err := prepareFS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer removeRoots([]string{fsDir})
+	defer storage.Shutdown(ctx)
+	backend := &conditionalWriteTestLayer{ObjectLayer: storage}
+	bucket, _, err := initAPIHandlerTest(backend, []string{"PutObject"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = newTestConfig(globalMinioDefaultRegion, storage); err != nil {
+		t.Fatal(err)
+	}
+	credentials := globalActiveCred
+	originalCache := newCachedObjectLayerFn()
+	defer setCacheObjectLayer(originalCache)
+	setCacheObjectLayer(nil)
 
-	sourceInfo, err := obj.PutObject(ctx, bucketName, sourceName,
+	sourceData := []byte("copy source")
+	sourceInfo, err := storage.PutObject(ctx, bucket, "source",
 		mustGetPutObjReader(t, bytes.NewReader(sourceData), int64(len(sourceData)), "", ""), ObjectOptions{})
 	if err != nil {
-		t.Fatalf("MinIO %s: failed to create copy source: %v", instanceType, err)
+		t.Fatal(err)
 	}
-	_, err = obj.PutObject(ctx, bucketName, destinationName,
-		mustGetPutObjReader(t, bytes.NewReader(destinationData), int64(len(destinationData)), "", ""), ObjectOptions{})
+	completeBody, err := xml.Marshal(CompleteMultipartUpload{Parts: []CompletePart{{PartNumber: 1, ETag: "part-etag"}}})
 	if err != nil {
-		t.Fatalf("MinIO %s: failed to create copy destination: %v", instanceType, err)
+		t.Fatal(err)
 	}
 
-	copyObject := func(destination, ifNoneMatch, copySourceIfNoneMatch string) *httptest.ResponseRecorder {
-		t.Helper()
-		headers := map[string]string{
-			xhttp.AmzCopySource: url.QueryEscape(SlashSeparator + bucketName + SlashSeparator + sourceName),
-		}
-		if ifNoneMatch != "" {
-			headers[xhttp.IfNoneMatch] = ifNoneMatch
-		}
-		if copySourceIfNoneMatch != "" {
-			headers[xhttp.AmzCopySourceIfNoneMatch] = copySourceIfNoneMatch
-		}
-		req, reqErr := newTestSignedRequestV4(http.MethodPut, getCopyObjectURL("", bucketName, destination),
-			0, nil, credentials.AccessKey, credentials.SecretKey, headers)
-		if reqErr != nil {
-			t.Fatalf("MinIO %s: failed to create conditional COPY request: %v", instanceType, reqErr)
-		}
-		recorder := httptest.NewRecorder()
-		apiRouter.ServeHTTP(recorder, req)
-		return recorder
-	}
-
-	response := copyObject(destinationName, "*", "")
-	if response.Code != http.StatusPreconditionFailed {
-		t.Fatalf("MinIO %s: expected 412 for an existing copy destination, got %d: %s", instanceType, response.Code, response.Body.String())
-	}
-	assertObjectData := func(name string, want []byte) {
-		t.Helper()
-		reader, readErr := obj.GetObjectNInfo(ctx, bucketName, name, nil, nil, readLock, ObjectOptions{})
-		if readErr != nil {
-			t.Fatalf("MinIO %s: failed to read %s: %v", instanceType, name, readErr)
-		}
-		got, readErr := ioutil.ReadAll(reader)
-		reader.Close()
-		if readErr != nil {
-			t.Fatalf("MinIO %s: failed to read %s body: %v", instanceType, name, readErr)
-		}
-		if !bytes.Equal(got, want) {
-			t.Fatalf("MinIO %s: unexpected %s data: got %q, want %q", instanceType, name, got, want)
-		}
-	}
-	assertObjectData(destinationName, destinationData)
-
-	newDestination := "if-none-match-copy-new"
-	response = copyObject(newDestination, "*", "")
-	if response.Code != http.StatusOK {
-		t.Fatalf("MinIO %s: expected conditional copy to a new destination to succeed, got %d: %s", instanceType, response.Code, response.Body.String())
-	}
-	assertObjectData(newDestination, sourceData)
-
-	response = copyObject("if-none-match-copy-invalid", "etag", "")
-	if response.Code != http.StatusBadRequest {
-		t.Fatalf("MinIO %s: expected invalid destination If-None-Match to return 400, got %d", instanceType, response.Code)
-	}
-
-	response = copyObject("if-none-match-copy-source-condition", "", sourceInfo.ETag)
-	if response.Code != http.StatusPreconditionFailed {
-		t.Fatalf("MinIO %s: expected matching copy-source condition to return 412, got %d", instanceType, response.Code)
-	}
-}
-
-func TestIfNoneMatchTransport(t *testing.T) {
-	testCases := []struct {
-		name       string
-		method     string
-		url        string
-		wantHeader bool
-	}{
-		{name: "single PUT", method: http.MethodPut, url: "http://example.com/bucket/object", wantHeader: true},
-		{name: "multipart complete", method: http.MethodPost, url: "http://example.com/bucket/object?uploadId=upload", wantHeader: true},
-		{name: "multipart initiate", method: http.MethodPost, url: "http://example.com/bucket/object?uploads="},
-		{name: "upload part", method: http.MethodPut, url: "http://example.com/bucket/object?partNumber=1&uploadId=upload"},
-	}
-
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			originalReq := httptest.NewRequest(testCase.method, testCase.url, nil)
-			originalReq.Header.Set(xhttp.AmzCopySourceIfNoneMatch, "source-etag")
-
-			transport := ifNoneMatchTransport{base: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-				if got := req.Header.Get(xhttp.IfNoneMatch); (got == "*") != testCase.wantHeader {
-					t.Fatalf("unexpected destination If-None-Match value %q", got)
-				}
-				if got := req.Header.Get(xhttp.AmzCopySourceIfNoneMatch); got != "source-etag" {
-					t.Fatalf("copy-source condition changed: got %q", got)
-				}
-				return &http.Response{
-					StatusCode: http.StatusOK,
-					Header:     make(http.Header),
-					Body:       ioutil.NopCloser(strings.NewReader("")),
-					Request:    req,
-				}, nil
-			})}
-
-			response, err := transport.RoundTrip(originalReq)
-			if err != nil {
-				t.Fatal(err)
+	for _, operation := range []string{"PutObject", "CopyObject", "CompleteMultipart"} {
+		t.Run(operation, func(t *testing.T) {
+			apiRouter := initTestAPIEndPoints(backend, []string{operation})
+			type testCase struct {
+				name          string
+				headerValues  []string
+				sourceETag    string
+				writeBack     bool
+				backendErr    error
+				wantStatus    int
+				wantErrorCode string
+				wantWrite     bool
+				wantCondition bool
 			}
-			response.Body.Close()
-			if got := originalReq.Header.Get(xhttp.IfNoneMatch); got != "" {
-				t.Fatalf("transport mutated original request: got If-None-Match %q", got)
+			testCases := []testCase{
+				{name: "unconditional", wantStatus: http.StatusOK, wantWrite: true},
+				{name: "wildcard forwarded", headerValues: []string{"*"}, wantStatus: http.StatusOK, wantWrite: true, wantCondition: true},
+				{name: "multiple fields preserve wildcard", headerValues: []string{"", "*"}, wantStatus: http.StatusOK, wantWrite: true, wantCondition: true},
+				{name: "backend precondition failure", headerValues: []string{"*"}, backendErr: PreConditionFailed{}, wantStatus: http.StatusPreconditionFailed, wantErrorCode: "PreconditionFailed", wantWrite: true, wantCondition: true},
+				{name: "unsupported ETag", headerValues: []string{"\"etag\""}, wantStatus: http.StatusBadRequest, wantErrorCode: "InvalidRequest"},
+				{name: "mixed header fields", headerValues: []string{"*", "\"etag\""}, wantStatus: http.StatusBadRequest, wantErrorCode: "InvalidRequest"},
+				{name: "write-back rejected", headerValues: []string{"*"}, writeBack: true, wantStatus: http.StatusNotImplemented, wantErrorCode: "NotImplemented"},
+			}
+			if operation == "CopyObject" {
+				testCases = append(testCases, testCase{name: "copy-source condition", sourceETag: sourceInfo.ETag, wantStatus: http.StatusPreconditionFailed, wantErrorCode: "PreconditionFailed"})
+			}
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					backend.writeCalls = 0
+					backend.writeErr = tc.backendErr
+					if tc.writeBack {
+						setCacheObjectLayer(&cacheObjects{
+							commitWriteback:       true,
+							InnerGetObjectNInfoFn: storage.GetObjectNInfo,
+							InnerGetObjectInfoFn:  storage.GetObjectInfo,
+							InnerPutObjectFn:      backend.PutObject,
+							InnerCopyObjectFn:     backend.CopyObject,
+						})
+					}
+					defer setCacheObjectLayer(nil)
+					method := http.MethodPut
+					requestURL := getPutObjectURL("", bucket, "destination")
+					body := []byte("object data")
+					if operation == "CopyObject" {
+						body = nil
+					} else if operation == "CompleteMultipart" {
+						method = http.MethodPost
+						requestURL = getCompleteMultipartUploadURL("", bucket, "destination", "upload-id")
+						body = completeBody
+					}
+					req, err := newTestRequest(method, requestURL, int64(len(body)), bytes.NewReader(body))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if operation == "CopyObject" {
+						req.Header.Set(xhttp.AmzCopySource, url.QueryEscape("/"+bucket+"/source"))
+						if tc.sourceETag != "" {
+							req.Header.Set(xhttp.AmzCopySourceIfNoneMatch, tc.sourceETag)
+						}
+					}
+					if tc.headerValues != nil {
+						req.Header[xhttp.IfNoneMatch] = tc.headerValues
+					}
+					if err = signRequestV4(req, credentials.AccessKey, credentials.SecretKey); err != nil {
+						t.Fatal(err)
+					}
+					req.RequestURI = req.URL.RequestURI()
+					response := httptest.NewRecorder()
+					apiRouter.ServeHTTP(response, req)
+					if response.Code != tc.wantStatus {
+						t.Fatalf("got status %d, want %d: %s", response.Code, tc.wantStatus, response.Body.String())
+					}
+					if tc.wantErrorCode != "" {
+						var apiErr APIErrorResponse
+						if err = xml.Unmarshal(response.Body.Bytes(), &apiErr); err != nil {
+							t.Fatal(err)
+						}
+						if apiErr.Code != tc.wantErrorCode {
+							t.Fatalf("got error %q, want %q", apiErr.Code, tc.wantErrorCode)
+						}
+					}
+					wantCalls := 0
+					if tc.wantWrite {
+						wantCalls = 1
+					}
+					if backend.writeCalls != wantCalls {
+						t.Fatalf("got %d backend writes, want %d", backend.writeCalls, wantCalls)
+					}
+					if tc.wantWrite && (backend.operation != operation || backend.opts.IfNoneMatch != tc.wantCondition) {
+						t.Fatalf("backend got operation %q, IfNoneMatch=%t; want %q, %t", backend.operation, backend.opts.IfNoneMatch, operation, tc.wantCondition)
+					}
+					if operation == "CopyObject" && tc.wantWrite && backend.srcOpts.IfNoneMatch {
+						t.Fatal("destination condition leaked into copy-source options")
+					}
+				})
 			}
 		})
-	}
-}
-
-func testAPIPutObjectIfNoneMatch(obj ObjectLayer, instanceType, bucketName string, apiRouter http.Handler,
-	credentials auth.Credentials, t *testing.T) {
-	t.Helper()
-	ctx := context.Background()
-	original := []byte("original")
-	objectName := "if-none-match-existing"
-	_, err := obj.PutObject(ctx, bucketName, objectName,
-		mustGetPutObjReader(t, bytes.NewReader(original), int64(len(original)), "", ""), ObjectOptions{})
-	if err != nil {
-		t.Fatalf("MinIO %s: failed to create existing object: %v", instanceType, err)
-	}
-
-	put := func(name string, data []byte, headerValues []string) *httptest.ResponseRecorder {
-		t.Helper()
-		req, reqErr := newTestRequest(http.MethodPut, getPutObjectURL("", bucketName, name),
-			int64(len(data)), bytes.NewReader(data))
-		if reqErr != nil {
-			t.Fatalf("MinIO %s: failed to create conditional PUT request: %v", instanceType, reqErr)
-		}
-		if headerValues != nil {
-			req.Header[xhttp.IfNoneMatch] = append([]string(nil), headerValues...)
-		}
-		if reqErr = signRequestV4(req, credentials.AccessKey, credentials.SecretKey); reqErr != nil {
-			t.Fatalf("MinIO %s: failed to sign conditional PUT request: %v", instanceType, reqErr)
-		}
-		recorder := httptest.NewRecorder()
-		apiRouter.ServeHTTP(recorder, req)
-		return recorder
-	}
-
-	response := put(objectName, []byte("replacement"), []string{"*"})
-	if response.Code != http.StatusPreconditionFailed {
-		t.Fatalf("MinIO %s: expected 412 for an existing object, got %d: %s", instanceType, response.Code, response.Body.String())
-	}
-	apiError := APIErrorResponse{}
-	if err = xml.Unmarshal(response.Body.Bytes(), &apiError); err != nil {
-		t.Fatalf("MinIO %s: failed to decode conditional PUT error: %v", instanceType, err)
-	}
-	if apiError.Code != "PreconditionFailed" {
-		t.Fatalf("MinIO %s: expected PreconditionFailed, got %q", instanceType, apiError.Code)
-	}
-	response = put(objectName, []byte("duplicate-field replacement"), []string{"", "*"})
-	if response.Code != http.StatusPreconditionFailed {
-		t.Fatalf("MinIO %s: expected duplicate-field wildcard to preserve the precondition, got %d: %s",
-			instanceType, response.Code, response.Body.String())
-	}
-
-	reader, err := obj.GetObjectNInfo(ctx, bucketName, objectName, nil, nil, readLock, ObjectOptions{})
-	if err != nil {
-		t.Fatalf("MinIO %s: failed to read existing object: %v", instanceType, err)
-	}
-	stored, err := ioutil.ReadAll(reader)
-	reader.Close()
-	if err != nil {
-		t.Fatalf("MinIO %s: failed to read existing object body: %v", instanceType, err)
-	}
-	if !bytes.Equal(stored, original) {
-		t.Fatalf("MinIO %s: conditional PUT changed existing data: got %q, want %q", instanceType, stored, original)
-	}
-
-	response = put("if-none-match-new", []byte("created"), []string{"*"})
-	if response.Code != http.StatusOK {
-		t.Fatalf("MinIO %s: expected conditional create to succeed, got %d: %s", instanceType, response.Code, response.Body.String())
-	}
-
-	response = put("if-none-match-invalid", []byte("invalid"), []string{"etag"})
-	if response.Code != http.StatusBadRequest {
-		t.Fatalf("MinIO %s: expected an invalid If-None-Match value to return 400, got %d", instanceType, response.Code)
-	}
-	response = put("if-none-match-invalid-mixed", []byte("invalid"), []string{"*", "\"etag\""})
-	if response.Code != http.StatusBadRequest {
-		t.Fatalf("MinIO %s: expected mixed duplicate If-None-Match fields to return 400, got %d", instanceType, response.Code)
 	}
 }
 
@@ -2914,99 +2865,6 @@ func testAPINewMultipartHandlerParallel(obj ObjectLayer, instanceType, bucketNam
 func TestAPICompleteMultipartHandler(t *testing.T) {
 	defer DetectTestLeak(t)()
 	ExecObjectLayerAPITest(t, testAPICompleteMultipartHandler, []string{"CompleteMultipart"})
-}
-
-func TestAPICompleteMultipartIfNoneMatch(t *testing.T) {
-	defer DetectTestLeak(t)()
-	ExecObjectLayerAPITest(t, testAPICompleteMultipartIfNoneMatch, []string{"CompleteMultipart"})
-}
-
-func testAPICompleteMultipartIfNoneMatch(obj ObjectLayer, instanceType, bucketName string, apiRouter http.Handler,
-	credentials auth.Credentials, t *testing.T) {
-	t.Helper()
-	ctx := context.Background()
-	objectName := "if-none-match-multipart"
-	original := []byte("original")
-	_, err := obj.PutObject(ctx, bucketName, objectName,
-		mustGetPutObjReader(t, bytes.NewReader(original), int64(len(original)), "", ""), ObjectOptions{})
-	if err != nil {
-		t.Fatalf("MinIO %s: failed to create existing object: %v", instanceType, err)
-	}
-
-	uploadID, err := obj.NewMultipartUpload(ctx, bucketName, objectName, ObjectOptions{})
-	if err != nil {
-		t.Fatalf("MinIO %s: failed to start multipart upload: %v", instanceType, err)
-	}
-	partData := []byte("multipart replacement")
-	part, err := obj.PutObjectPart(ctx, bucketName, objectName, uploadID, 1,
-		mustGetPutObjReader(t, bytes.NewReader(partData), int64(len(partData)), "", ""), ObjectOptions{})
-	if err != nil {
-		t.Fatalf("MinIO %s: failed to upload multipart part: %v", instanceType, err)
-	}
-	completeBody, err := xml.Marshal(CompleteMultipartUpload{Parts: []CompletePart{{PartNumber: 1, ETag: part.ETag}}})
-	if err != nil {
-		t.Fatalf("MinIO %s: failed to encode complete request: %v", instanceType, err)
-	}
-	newCompleteRequest := func() *http.Request {
-		t.Helper()
-		req, reqErr := newTestSignedRequestV4(http.MethodPost,
-			getCompleteMultipartUploadURL("", bucketName, objectName, uploadID), int64(len(completeBody)),
-			bytes.NewReader(completeBody), credentials.AccessKey, credentials.SecretKey,
-			map[string]string{xhttp.IfNoneMatch: "*"})
-		if reqErr != nil {
-			t.Fatalf("MinIO %s: failed to create conditional complete request: %v", instanceType, reqErr)
-		}
-		return req
-	}
-
-	originalCacheAPI := newCachedObjectLayerFn()
-	setCacheObjectLayer(&cacheObjects{commitWriteback: true})
-	defer setCacheObjectLayer(originalCacheAPI)
-	writeBackRecorder := httptest.NewRecorder()
-	apiRouter.ServeHTTP(writeBackRecorder, newCompleteRequest())
-	setCacheObjectLayer(originalCacheAPI)
-	if writeBackRecorder.Code != http.StatusServiceUnavailable {
-		t.Fatalf("MinIO %s: expected write-back conditional completion to return 503, got %d: %s",
-			instanceType, writeBackRecorder.Code, writeBackRecorder.Body.String())
-	}
-
-	recorder := httptest.NewRecorder()
-	apiRouter.ServeHTTP(recorder, newCompleteRequest())
-	if recorder.Code != http.StatusPreconditionFailed {
-		t.Fatalf("MinIO %s: expected 412 for conditional multipart completion, got %d: %s", instanceType, recorder.Code, recorder.Body.String())
-	}
-
-	reader, err := obj.GetObjectNInfo(ctx, bucketName, objectName, nil, nil, readLock, ObjectOptions{})
-	if err != nil {
-		t.Fatalf("MinIO %s: failed to read existing object: %v", instanceType, err)
-	}
-	stored, err := ioutil.ReadAll(reader)
-	reader.Close()
-	if err != nil {
-		t.Fatalf("MinIO %s: failed to read existing object body: %v", instanceType, err)
-	}
-	if !bytes.Equal(stored, original) {
-		t.Fatalf("MinIO %s: conditional multipart changed existing data: got %q, want %q", instanceType, stored, original)
-	}
-	if err = obj.AbortMultipartUpload(ctx, bucketName, objectName, uploadID, ObjectOptions{}); err != nil {
-		t.Fatalf("MinIO %s: failed to abort rejected multipart upload: %v", instanceType, err)
-	}
-
-	newObjectName := "if-none-match-multipart-new"
-	newUploadID, err := obj.NewMultipartUpload(ctx, bucketName, newObjectName, ObjectOptions{})
-	if err != nil {
-		t.Fatalf("MinIO %s: failed to start multipart upload for new object: %v", instanceType, err)
-	}
-	newPart, err := obj.PutObjectPart(ctx, bucketName, newObjectName, newUploadID, 1,
-		mustGetPutObjReader(t, bytes.NewReader(partData), int64(len(partData)), "", ""), ObjectOptions{})
-	if err != nil {
-		t.Fatalf("MinIO %s: failed to upload part for new object: %v", instanceType, err)
-	}
-	_, err = obj.CompleteMultipartUpload(ctx, bucketName, newObjectName, newUploadID,
-		[]CompletePart{{PartNumber: 1, ETag: newPart.ETag}}, ObjectOptions{IfNoneMatch: true})
-	if err != nil {
-		t.Fatalf("MinIO %s: conditional completion for new object failed: %v", instanceType, err)
-	}
 }
 
 func testAPICompleteMultipartHandler(obj ObjectLayer, instanceType, bucketName string, apiRouter http.Handler,

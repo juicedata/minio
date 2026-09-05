@@ -715,12 +715,6 @@ func (fs *FSObjects) CompleteMultipartUpload(ctx context.Context, bucket string,
 	}
 	defer destLock.Unlock()
 
-	if err = checkIfNoneMatch(opts, func() (ObjectInfo, error) {
-		return fs.getObjectInfo(ctx, bucket, object)
-	}); err != nil {
-		return oi, err
-	}
-
 	bucketMetaDir := pathJoin(fs.fsPath, MinioMetaBucket, BucketMetaPrefix)
 	fsMetaPath := pathJoin(bucketMetaDir, bucket, object, fs.metaJSONFile)
 	metaFile, err := fs.rwPool.Write(fsMetaPath)

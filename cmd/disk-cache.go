@@ -433,28 +433,28 @@ func (c *cacheObjects) GetObjectInfo(ctx context.Context, bucket, object string,
 	return objInfo, nil
 }
 
-// CopyObject reverts to backend after evicting any stale cache entries
+// CopyObject delegates to the backend and invalidates the destination cache.
 func (c *cacheObjects) CopyObject(ctx context.Context, srcBucket, srcObject, dstBucket, dstObject string, srcInfo ObjectInfo, srcOpts, dstOpts ObjectOptions) (objInfo ObjectInfo, err error) {
 	copyObjectFn := c.InnerCopyObjectFn
 	if c.commitWriteback && dstOpts.IfNoneMatch {
-		// Pending write-back state and cache namespace locks are node-local.
-		// No node can safely prove that another node has not already accepted
-		// a write for this destination, so fail instead of risking overwrite.
-		return ObjectInfo{}, BackendDown{}
+		return ObjectInfo{}, NotImplemented{Message: "Conditional writes are not supported with write-back caching enabled"}
 	}
-	if srcBucket != dstBucket || srcObject != dstObject {
+	if dstOpts.IfNoneMatch {
 		objInfo, err = copyObjectFn(ctx, srcBucket, srcObject, dstBucket, dstObject, srcInfo, srcOpts, dstOpts)
 		if err != nil {
 			return objInfo, err
 		}
 		if dcache, cacheErr := c.getCacheToLoc(ctx, dstBucket, dstObject); cacheErr == nil {
-			// A successful backend copy replaces the destination independently
-			// of the source cache state. Do not serve a stale destination entry.
+			// The backend may recreate an object with a stale cache entry.
+			// Evict the destination even when source caching is disabled.
 			_ = dcache.Delete(ctx, dstBucket, dstObject)
 		}
 		return objInfo, nil
 	}
 	if c.isCacheExclude(srcBucket, srcObject) || c.skipCache() {
+		return copyObjectFn(ctx, srcBucket, srcObject, dstBucket, dstObject, srcInfo, srcOpts, dstOpts)
+	}
+	if srcBucket != dstBucket || srcObject != dstObject {
 		return copyObjectFn(ctx, srcBucket, srcObject, dstBucket, dstObject, srcInfo, srcOpts, dstOpts)
 	}
 	// fetch diskCache if object is currently cached or nearest available cache drive
@@ -643,10 +643,8 @@ func (c *cacheObjects) migrateCacheFromV1toV2(ctx context.Context) {
 func (c *cacheObjects) PutObject(ctx context.Context, bucket, object string, r *PutObjReader, opts ObjectOptions) (objInfo ObjectInfo, err error) {
 	putObjectFn := c.InnerPutObjectFn
 	if c.commitWriteback && opts.IfNoneMatch {
-		// Pending write-back state and cache namespace locks are node-local.
-		// No node can safely prove that another node has not already accepted
-		// a write for this object, so fail instead of risking overwrite.
-		return ObjectInfo{}, BackendDown{}
+		// The asynchronous backend upload does not preserve the condition.
+		return ObjectInfo{}, NotImplemented{Message: "Conditional writes are not supported with write-back caching enabled"}
 	}
 	dcache, err := c.getCacheToLoc(ctx, bucket, object)
 	if err != nil {
