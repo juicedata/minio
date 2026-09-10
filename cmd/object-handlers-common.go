@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	xhttp "github.com/minio/minio/cmd/http"
@@ -31,6 +32,23 @@ import (
 var (
 	etagRegex = regexp.MustCompile("\"*?([^\"]*?)\"*?$")
 )
+
+func parseIfNoneMatchHeader(r *http.Request) (bool, APIErrorCode) {
+	seenWildcard := false
+	for _, fieldValue := range r.Header.Values(xhttp.IfNoneMatch) {
+		for _, member := range strings.Split(fieldValue, ",") {
+			member = strings.Trim(member, " \t")
+			if member == "" {
+				continue
+			}
+			if member != "*" || seenWildcard {
+				return false, ErrInvalidRequest
+			}
+			seenWildcard = true
+		}
+	}
+	return seenWildcard, ErrNone
+}
 
 // Validates the preconditions for CopyObjectPart, returns true if CopyObjectPart
 // operation should not proceed. Preconditions supported are:

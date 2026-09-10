@@ -1302,6 +1302,208 @@ func TestAPIPutObjectHandler(t *testing.T) {
 	ExecExtendedObjectLayerAPITest(t, testAPIPutObjectHandler, []string{"PutObject"})
 }
 
+func TestParseIfNoneMatchHeader(t *testing.T) {
+	testCases := []struct {
+		name         string
+		fieldValues  []string
+		wantWildcard bool
+		wantCode     APIErrorCode
+	}{
+		{name: "absent", wantCode: ErrNone},
+		{name: "empty", fieldValues: []string{""}, wantCode: ErrNone},
+		{name: "OWS only", fieldValues: []string{"   \t"}, wantCode: ErrNone},
+		{name: "wildcard", fieldValues: []string{"*"}, wantWildcard: true, wantCode: ErrNone},
+		{name: "wildcard with OWS", fieldValues: []string{" \t* \t"}, wantWildcard: true, wantCode: ErrNone},
+		{name: "ETag", fieldValues: []string{"\"etag\""}, wantCode: ErrInvalidRequest},
+		{name: "wildcard and ETag members", fieldValues: []string{"*, \"etag\""}, wantCode: ErrInvalidRequest},
+		{name: "empty then wildcard fields", fieldValues: []string{"", "*"}, wantWildcard: true, wantCode: ErrNone},
+		{name: "wildcard then ETag fields", fieldValues: []string{"*", "\"etag\""}, wantCode: ErrInvalidRequest},
+		{name: "duplicate wildcard fields", fieldValues: []string{"*", "*"}, wantCode: ErrInvalidRequest},
+		{name: "empty members around wildcard", fieldValues: []string{",", "*,,"}, wantWildcard: true, wantCode: ErrNone},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPut, "http://example.com/bucket/object", nil)
+			if testCase.fieldValues != nil {
+				req.Header[xhttp.IfNoneMatch] = append([]string(nil), testCase.fieldValues...)
+			}
+			gotWildcard, gotCode := parseIfNoneMatchHeader(req)
+			if gotWildcard != testCase.wantWildcard || gotCode != testCase.wantCode {
+				t.Fatalf("parse result: got (%t, %v), want (%t, %v)",
+					gotWildcard, gotCode, testCase.wantWildcard, testCase.wantCode)
+			}
+		})
+	}
+}
+
+// conditionalWriteTestLayer records write options and returns configured errors
+// for handler tests.
+type conditionalWriteTestLayer struct {
+	ObjectLayer
+	writeCalls int
+	operation  string
+	opts       ObjectOptions
+	srcOpts    ObjectOptions
+	writeErr   error
+}
+
+func (l *conditionalWriteTestLayer) IsEncryptionSupported() bool { return false }
+
+func (l *conditionalWriteTestLayer) recordWrite(operation, bucket, object string, opts ObjectOptions) (ObjectInfo, error) {
+	l.writeCalls++
+	l.operation = operation
+	l.opts = opts
+	return ObjectInfo{Bucket: bucket, Name: object, ETag: "test-etag"}, l.writeErr
+}
+
+func (l *conditionalWriteTestLayer) PutObject(ctx context.Context, bucket, object string, data *PutObjReader, opts ObjectOptions) (ObjectInfo, error) {
+	return l.recordWrite("PutObject", bucket, object, opts)
+}
+
+func (l *conditionalWriteTestLayer) CopyObject(ctx context.Context, srcBucket, srcObject, dstBucket, dstObject string, srcInfo ObjectInfo, srcOpts, dstOpts ObjectOptions) (ObjectInfo, error) {
+	l.srcOpts = srcOpts
+	return l.recordWrite("CopyObject", dstBucket, dstObject, dstOpts)
+}
+
+func (l *conditionalWriteTestLayer) CompleteMultipartUpload(ctx context.Context, bucket, object, uploadID string, parts []CompletePart, opts ObjectOptions) (ObjectInfo, error) {
+	return l.recordWrite("CompleteMultipart", bucket, object, opts)
+}
+
+func TestAPIObjectIfNoneMatch(t *testing.T) {
+	defer DetectTestLeak(t)()
+	resetTestGlobals()
+	ctx := context.Background()
+	storage, fsDir, err := prepareFS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer removeRoots([]string{fsDir})
+	defer storage.Shutdown(ctx)
+	backend := &conditionalWriteTestLayer{ObjectLayer: storage}
+	bucket, _, err := initAPIHandlerTest(backend, []string{"PutObject"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = newTestConfig(globalMinioDefaultRegion, storage); err != nil {
+		t.Fatal(err)
+	}
+	credentials := globalActiveCred
+	originalCache := newCachedObjectLayerFn()
+	defer setCacheObjectLayer(originalCache)
+	setCacheObjectLayer(nil)
+
+	sourceData := []byte("copy source")
+	sourceInfo, err := storage.PutObject(ctx, bucket, "source",
+		mustGetPutObjReader(t, bytes.NewReader(sourceData), int64(len(sourceData)), "", ""), ObjectOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completeBody, err := xml.Marshal(CompleteMultipartUpload{Parts: []CompletePart{{PartNumber: 1, ETag: "part-etag"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, operation := range []string{"PutObject", "CopyObject", "CompleteMultipart"} {
+		t.Run(operation, func(t *testing.T) {
+			apiRouter := initTestAPIEndPoints(backend, []string{operation})
+			type testCase struct {
+				name          string
+				headerValues  []string
+				sourceETag    string
+				writeBack     bool
+				backendErr    error
+				wantStatus    int
+				wantErrorCode string
+				wantWrite     bool
+				wantCondition bool
+			}
+			testCases := []testCase{
+				{name: "unconditional", wantStatus: http.StatusOK, wantWrite: true},
+				{name: "wildcard forwarded", headerValues: []string{"*"}, wantStatus: http.StatusOK, wantWrite: true, wantCondition: true},
+				{name: "multiple fields preserve wildcard", headerValues: []string{"", "*"}, wantStatus: http.StatusOK, wantWrite: true, wantCondition: true},
+				{name: "backend precondition failure", headerValues: []string{"*"}, backendErr: PreConditionFailed{}, wantStatus: http.StatusPreconditionFailed, wantErrorCode: "PreconditionFailed", wantWrite: true, wantCondition: true},
+				{name: "unsupported ETag", headerValues: []string{"\"etag\""}, wantStatus: http.StatusBadRequest, wantErrorCode: "InvalidRequest"},
+				{name: "mixed header fields", headerValues: []string{"*", "\"etag\""}, wantStatus: http.StatusBadRequest, wantErrorCode: "InvalidRequest"},
+				{name: "write-back rejected", headerValues: []string{"*"}, writeBack: true, wantStatus: http.StatusNotImplemented, wantErrorCode: "NotImplemented"},
+			}
+			if operation == "CopyObject" {
+				testCases = append(testCases, testCase{name: "copy-source condition", sourceETag: sourceInfo.ETag, wantStatus: http.StatusPreconditionFailed, wantErrorCode: "PreconditionFailed"})
+			}
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					backend.writeCalls = 0
+					backend.writeErr = tc.backendErr
+					if tc.writeBack {
+						setCacheObjectLayer(&cacheObjects{
+							commitWriteback:       true,
+							InnerGetObjectNInfoFn: storage.GetObjectNInfo,
+							InnerGetObjectInfoFn:  storage.GetObjectInfo,
+							InnerPutObjectFn:      backend.PutObject,
+							InnerCopyObjectFn:     backend.CopyObject,
+						})
+					}
+					defer setCacheObjectLayer(nil)
+					method := http.MethodPut
+					requestURL := getPutObjectURL("", bucket, "destination")
+					body := []byte("object data")
+					if operation == "CopyObject" {
+						body = nil
+					} else if operation == "CompleteMultipart" {
+						method = http.MethodPost
+						requestURL = getCompleteMultipartUploadURL("", bucket, "destination", "upload-id")
+						body = completeBody
+					}
+					req, err := newTestRequest(method, requestURL, int64(len(body)), bytes.NewReader(body))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if operation == "CopyObject" {
+						req.Header.Set(xhttp.AmzCopySource, url.QueryEscape("/"+bucket+"/source"))
+						if tc.sourceETag != "" {
+							req.Header.Set(xhttp.AmzCopySourceIfNoneMatch, tc.sourceETag)
+						}
+					}
+					if tc.headerValues != nil {
+						req.Header[xhttp.IfNoneMatch] = tc.headerValues
+					}
+					if err = signRequestV4(req, credentials.AccessKey, credentials.SecretKey); err != nil {
+						t.Fatal(err)
+					}
+					req.RequestURI = req.URL.RequestURI()
+					response := httptest.NewRecorder()
+					apiRouter.ServeHTTP(response, req)
+					if response.Code != tc.wantStatus {
+						t.Fatalf("got status %d, want %d: %s", response.Code, tc.wantStatus, response.Body.String())
+					}
+					if tc.wantErrorCode != "" {
+						var apiErr APIErrorResponse
+						if err = xml.Unmarshal(response.Body.Bytes(), &apiErr); err != nil {
+							t.Fatal(err)
+						}
+						if apiErr.Code != tc.wantErrorCode {
+							t.Fatalf("got error %q, want %q", apiErr.Code, tc.wantErrorCode)
+						}
+					}
+					wantCalls := 0
+					if tc.wantWrite {
+						wantCalls = 1
+					}
+					if backend.writeCalls != wantCalls {
+						t.Fatalf("got %d backend writes, want %d", backend.writeCalls, wantCalls)
+					}
+					if tc.wantWrite && (backend.operation != operation || backend.opts.IfNoneMatch != tc.wantCondition) {
+						t.Fatalf("backend got operation %q, IfNoneMatch=%t; want %q, %t", backend.operation, backend.opts.IfNoneMatch, operation, tc.wantCondition)
+					}
+					if operation == "CopyObject" && tc.wantWrite && backend.srcOpts.IfNoneMatch {
+						t.Fatal("destination condition leaked into copy-source options")
+					}
+				})
+			}
+		})
+	}
+}
+
 func testAPIPutObjectHandler(obj ObjectLayer, instanceType, bucketName string, apiRouter http.Handler,
 	credentials auth.Credentials, t *testing.T) {
 

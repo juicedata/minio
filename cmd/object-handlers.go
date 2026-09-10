@@ -982,6 +982,12 @@ func (api objectAPIHandlers) CopyObjectHandler(w http.ResponseWriter, r *http.Re
 		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
 		return
 	}
+	ifNoneMatch, s3Error := parseIfNoneMatchHeader(r)
+	if s3Error != ErrNone {
+		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(s3Error), r.URL, guessIsBrowserReq(r))
+		return
+	}
+	dstOpts.IfNoneMatch = ifNoneMatch
 	cpSrcDstSame := isStringEqual(pathJoin(srcBucket, srcObject), pathJoin(dstBucket, dstObject))
 
 	getObjectNInfo := objectAPI.GetObjectNInfo
@@ -1582,6 +1588,11 @@ func (api objectAPIHandlers) PutObjectHandler(w http.ResponseWriter, r *http.Req
 	opts, err = putOpts(ctx, r, bucket, object, metadata)
 	if err != nil {
 		writeErrorResponse(ctx, w, toAPIError(ctx, err), r.URL, guessIsBrowserReq(r))
+		return
+	}
+	opts.IfNoneMatch, s3Err = parseIfNoneMatchHeader(r)
+	if s3Err != ErrNone {
+		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(s3Err), r.URL, guessIsBrowserReq(r))
 		return
 	}
 
@@ -2930,6 +2941,18 @@ func (api objectAPIHandlers) CompleteMultipartUploadHandler(w http.ResponseWrite
 		return
 	}
 
+	ifNoneMatch, s3Error := parseIfNoneMatchHeader(r)
+	if s3Error != ErrNone {
+		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(s3Error), r.URL, guessIsBrowserReq(r))
+		return
+	}
+	if cacheAPI := api.CacheAPI(); ifNoneMatch && cacheAPI != nil && cacheAPI.IsWriteBackEnabled() {
+		// Multipart completion bypasses CacheObjectLayer. Reject it here because
+		// pending write-back state is node-local and cannot be checked safely.
+		writeErrorResponse(ctx, w, toAPIError(ctx, NotImplemented{Message: "Conditional writes are not supported with write-back caching enabled"}), r.URL, guessIsBrowserReq(r))
+		return
+	}
+
 	// Content-Length is required and should be non-zero
 	if r.ContentLength <= 0 {
 		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrMissingContentLength), r.URL, guessIsBrowserReq(r))
@@ -3050,7 +3073,10 @@ func (api objectAPIHandlers) CompleteMultipartUploadHandler(w http.ResponseWrite
 
 	w = &whiteSpaceWriter{ResponseWriter: w, Flusher: w.(http.Flusher)}
 	completeDoneCh := sendWhiteSpace(w)
-	objInfo, err := completeMultiPartUpload(ctx, bucket, object, uploadID, completeParts, ObjectOptions{})
+	completeOpts := ObjectOptions{
+		IfNoneMatch: ifNoneMatch,
+	}
+	objInfo, err := completeMultiPartUpload(ctx, bucket, object, uploadID, completeParts, completeOpts)
 	// Stop writing white spaces to the client. Note that close(doneCh) style is not used as it
 	// can cause white space to be written after we send XML response in a race condition.
 	headerWritten := <-completeDoneCh

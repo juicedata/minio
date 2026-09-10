@@ -82,6 +82,7 @@ type CacheObjectLayer interface {
 	// Storage operations.
 	StorageInfo(ctx context.Context) CacheStorageInfo
 	CacheStats() *CacheStats
+	IsWriteBackEnabled() bool
 }
 
 // Abstracts disk caching - used by the S3 layer
@@ -432,9 +433,24 @@ func (c *cacheObjects) GetObjectInfo(ctx context.Context, bucket, object string,
 	return objInfo, nil
 }
 
-// CopyObject reverts to backend after evicting any stale cache entries
+// CopyObject delegates to the backend and invalidates the destination cache.
 func (c *cacheObjects) CopyObject(ctx context.Context, srcBucket, srcObject, dstBucket, dstObject string, srcInfo ObjectInfo, srcOpts, dstOpts ObjectOptions) (objInfo ObjectInfo, err error) {
 	copyObjectFn := c.InnerCopyObjectFn
+	if c.commitWriteback && dstOpts.IfNoneMatch {
+		return ObjectInfo{}, NotImplemented{Message: "Conditional writes are not supported with write-back caching enabled"}
+	}
+	if dstOpts.IfNoneMatch {
+		objInfo, err = copyObjectFn(ctx, srcBucket, srcObject, dstBucket, dstObject, srcInfo, srcOpts, dstOpts)
+		if err != nil {
+			return objInfo, err
+		}
+		if dcache, cacheErr := c.getCacheToLoc(ctx, dstBucket, dstObject); cacheErr == nil {
+			// The backend may recreate an object with a stale cache entry.
+			// Evict the destination even when source caching is disabled.
+			_ = dcache.Delete(ctx, dstBucket, dstObject)
+		}
+		return objInfo, nil
+	}
 	if c.isCacheExclude(srcBucket, srcObject) || c.skipCache() {
 		return copyObjectFn(ctx, srcBucket, srcObject, dstBucket, dstObject, srcInfo, srcOpts, dstOpts)
 	}
@@ -478,6 +494,10 @@ func (c *cacheObjects) StorageInfo(ctx context.Context) (cInfo CacheStorageInfo)
 // CacheStats - returns underlying storage statistics.
 func (c *cacheObjects) CacheStats() (cs *CacheStats) {
 	return c.cacheStats
+}
+
+func (c *cacheObjects) IsWriteBackEnabled() bool {
+	return c.commitWriteback
 }
 
 // skipCache() returns true if cache migration is in progress
@@ -622,6 +642,10 @@ func (c *cacheObjects) migrateCacheFromV1toV2(ctx context.Context) {
 // PutObject - caches the uploaded object for single Put operations
 func (c *cacheObjects) PutObject(ctx context.Context, bucket, object string, r *PutObjReader, opts ObjectOptions) (objInfo ObjectInfo, err error) {
 	putObjectFn := c.InnerPutObjectFn
+	if c.commitWriteback && opts.IfNoneMatch {
+		// The asynchronous backend upload does not preserve the condition.
+		return ObjectInfo{}, NotImplemented{Message: "Conditional writes are not supported with write-back caching enabled"}
+	}
 	dcache, err := c.getCacheToLoc(ctx, bucket, object)
 	if err != nil {
 		// disk cache could not be located,execute backend call.

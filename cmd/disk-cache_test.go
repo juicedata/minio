@@ -17,6 +17,9 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
+	"os"
 	"testing"
 	"time"
 )
@@ -69,5 +72,98 @@ func TestCacheExclusion(t *testing.T) {
 		if cobjects.isCacheExclude(testCase.bucketName, testCase.objectName) != testCase.expectedResult {
 			t.Fatal("Cache exclusion test failed for case ", i)
 		}
+	}
+}
+
+func TestCacheWriteBackRejectsConditionalWrites(t *testing.T) {
+	backendCalls := 0
+	cobjects := &cacheObjects{
+		commitWriteback: true,
+		InnerPutObjectFn: func(ctx context.Context, bucket, object string, data *PutObjReader, opts ObjectOptions) (ObjectInfo, error) {
+			backendCalls++
+			return ObjectInfo{}, nil
+		},
+		InnerCopyObjectFn: func(ctx context.Context, srcBucket, srcObject, dstBucket, dstObject string, srcInfo ObjectInfo, srcOpts, dstOpts ObjectOptions) (ObjectInfo, error) {
+			backendCalls++
+			return ObjectInfo{}, nil
+		},
+	}
+
+	data := []byte("conditional")
+	_, err := cobjects.PutObject(context.Background(), "bucket", "object",
+		mustGetPutObjReader(t, bytes.NewReader(data), int64(len(data)), "", ""),
+		ObjectOptions{IfNoneMatch: true})
+	if toAPIErrorCode(context.Background(), err) != ErrNotImplemented {
+		t.Fatalf("expected write-back conditional PUT to fail safely, got %v", err)
+	}
+
+	_, err = cobjects.CopyObject(context.Background(), "source-bucket", "source", "destination-bucket", "destination",
+		ObjectInfo{}, ObjectOptions{}, ObjectOptions{IfNoneMatch: true})
+	if toAPIErrorCode(context.Background(), err) != ErrNotImplemented {
+		t.Fatalf("expected write-back conditional COPY to fail safely, got %v", err)
+	}
+	if backendCalls != 0 {
+		t.Fatalf("conditional writes reached backend %d times", backendCalls)
+	}
+}
+
+func TestCacheConditionalCopyInvalidatesDestination(t *testing.T) {
+	ctx := context.Background()
+	const (
+		destinationBucket = "destination-bucket"
+		destinationObject = "destination"
+	)
+	for _, testCase := range []struct {
+		name          string
+		backendErr    error
+		excludeSource bool
+		migrating     bool
+	}{
+		{name: "success"},
+		{name: "excluded source", excludeSource: true},
+		{name: "cache migration", migrating: true},
+		{name: "precondition failed", backendErr: PreConditionFailed{}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			cacheRoot := t.TempDir()
+			cacheLock := NewNSLock(false)
+			dcache := &diskCache{dir: cacheRoot, online: 1}
+			dcache.NewNSLockFn = func(cachePath string) RWLocker {
+				return cacheLock.NewNSLock(nil, cachePath, "")
+			}
+			if err := os.MkdirAll(getCacheSHADir(cacheRoot, destinationBucket, destinationObject), 0777); err != nil {
+				t.Fatal(err)
+			}
+
+			backendCalls := 0
+			cobjects := &cacheObjects{
+				cache:     []*diskCache{dcache},
+				migrating: testCase.migrating,
+				InnerCopyObjectFn: func(ctx context.Context, srcBucket, srcObject, dstBucket, dstObject string, srcInfo ObjectInfo, srcOpts, dstOpts ObjectOptions) (ObjectInfo, error) {
+					backendCalls++
+					if !dstOpts.IfNoneMatch {
+						t.Fatal("destination condition was not forwarded to the backend")
+					}
+					if !dcache.Exists(ctx, destinationBucket, destinationObject) {
+						t.Fatal("destination cache was evicted before the backend accepted the copy")
+					}
+					return ObjectInfo{Bucket: dstBucket, Name: dstObject}, testCase.backendErr
+				},
+			}
+			if testCase.excludeSource {
+				cobjects.exclude = []string{"source-bucket/*"}
+			}
+			_, err := cobjects.CopyObject(ctx, "source-bucket", "source", destinationBucket, destinationObject,
+				ObjectInfo{}, ObjectOptions{}, ObjectOptions{IfNoneMatch: true})
+			if err != testCase.backendErr {
+				t.Fatalf("copy error: got %v, want %v", err, testCase.backendErr)
+			}
+			if backendCalls != 1 {
+				t.Fatalf("expected one backend copy, got %d", backendCalls)
+			}
+			if cached := dcache.Exists(ctx, destinationBucket, destinationObject); cached != (err != nil) {
+				t.Fatalf("destination cached: got %t, want %t", cached, err != nil)
+			}
+		})
 	}
 }

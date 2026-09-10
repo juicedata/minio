@@ -37,6 +37,10 @@ In the example above this means that  `MINIO_CACHE_WATERMARK_LOW` is effectively
 
 To test this setup, access the MinIO gateway via browser or [`mc`](https://docs.min.io/docs/minio-client-quickstart-guide). You’ll see the uploaded files are accessible from all the MinIO endpoints.
 
+### Conditional writes in the JuiceFS Gateway
+
+`If-None-Match: *` is supported with the default `MINIO_CACHE_COMMIT=writethrough` mode. With `MINIO_CACHE_COMMIT=writeback`, conditional PUT, CopyObject, and CompleteMultipartUpload requests are rejected with `501 NotImplemented`, because asynchronous uploads do not preserve the condition and pending writes cannot be checked across gateway instances. Use write-through caching or disable the cache for conditional writes.
+
 # Explore Further
 
 - [Disk cache design](https://github.com/minio/minio/blob/master/docs/disk-caching/DESIGN.md)
