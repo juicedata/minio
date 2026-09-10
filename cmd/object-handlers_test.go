@@ -1619,7 +1619,7 @@ func testAPICopyObjectPartHandlerSanity(obj ObjectLayer, instanceType, bucketNam
 
 		// construct HTTP request for copy object.
 		var req *http.Request
-		req, err = newTestSignedRequestV4(http.MethodPut, cpPartURL, 0, nil, credentials.AccessKey, credentials.SecretKey, nil)
+		req, err = newTestRequest(http.MethodPut, cpPartURL, 0, nil)
 		if err != nil {
 			t.Fatalf("Test failed to create HTTP request for copy object part: <ERROR> %v", err)
 		}
@@ -1627,6 +1627,9 @@ func testAPICopyObjectPartHandlerSanity(obj ObjectLayer, instanceType, bucketNam
 		// "X-Amz-Copy-Source" header contains the information about the source bucket and the object to copied.
 		req.Header.Set("X-Amz-Copy-Source", url.QueryEscape(pathJoin(bucketName, objectName)))
 		req.Header.Set("X-Amz-Copy-Source-Range", fmt.Sprintf("bytes=%d-%d", a, b))
+		if err = signRequestV4(req, credentials.AccessKey, credentials.SecretKey); err != nil {
+			t.Fatal(err)
+		}
 
 		// Since `apiRouter` satisfies `http.Handler` it has a ServeHTTP to execute the logic of the handler.
 		// Call the ServeHTTP to execute the handler, `func (api objectAPIHandlers) CopyObjectHandler` handles the request.
@@ -1924,11 +1927,11 @@ func testAPICopyObjectPartHandler(obj ObjectLayer, instanceType, bucketName stri
 		rec := httptest.NewRecorder()
 		if !testCase.invalidPartNumber || !testCase.maximumPartNumber {
 			// construct HTTP request for copy object.
-			req, err = newTestSignedRequestV4(http.MethodPut, getCopyObjectPartURL("", testCase.bucketName, testObject, testCase.uploadID, "1"), 0, nil, testCase.accessKey, testCase.secretKey, nil)
+			req, err = newTestRequest(http.MethodPut, getCopyObjectPartURL("", testCase.bucketName, testObject, testCase.uploadID, "1"), 0, nil)
 		} else if testCase.invalidPartNumber {
-			req, err = newTestSignedRequestV4(http.MethodPut, getCopyObjectPartURL("", testCase.bucketName, testObject, testCase.uploadID, "abc"), 0, nil, testCase.accessKey, testCase.secretKey, nil)
+			req, err = newTestRequest(http.MethodPut, getCopyObjectPartURL("", testCase.bucketName, testObject, testCase.uploadID, "abc"), 0, nil)
 		} else if testCase.maximumPartNumber {
-			req, err = newTestSignedRequestV4(http.MethodPut, getCopyObjectPartURL("", testCase.bucketName, testObject, testCase.uploadID, "99999"), 0, nil, testCase.accessKey, testCase.secretKey, nil)
+			req, err = newTestRequest(http.MethodPut, getCopyObjectPartURL("", testCase.bucketName, testObject, testCase.uploadID, "99999"), 0, nil)
 		}
 		if err != nil {
 			t.Fatalf("Test %d: Failed to create HTTP request for copy Object: <ERROR> %v", i+1, err)
@@ -1940,6 +1943,9 @@ func testAPICopyObjectPartHandler(obj ObjectLayer, instanceType, bucketName stri
 		}
 		if testCase.copySourceRange != "" {
 			req.Header.Set("X-Amz-Copy-Source-Range", testCase.copySourceRange)
+		}
+		if err = signRequestV4(req, testCase.accessKey, testCase.secretKey); err != nil {
+			t.Fatal(err)
 		}
 
 		// Since `apiRouter` satisfies `http.Handler` it has a ServeHTTP to execute the logic of the handler.
@@ -2301,8 +2307,8 @@ func testAPICopyObjectHandler(obj ObjectLayer, instanceType, bucketName string, 
 		// initialize HTTP NewRecorder, this records any mutations to response writer inside the handler.
 		rec := httptest.NewRecorder()
 		// construct HTTP request for copy object.
-		req, err = newTestSignedRequestV4(http.MethodPut, getCopyObjectURL("", testCase.bucketName, testCase.newObjectName),
-			0, nil, testCase.accessKey, testCase.secretKey, nil)
+		req, err = newTestRequest(http.MethodPut, getCopyObjectURL("", testCase.bucketName, testCase.newObjectName),
+			0, nil)
 
 		if err != nil {
 			t.Fatalf("Test %d: Failed to create HTTP request for copy Object: <ERROR> %v", i, err)
@@ -2329,6 +2335,9 @@ func testAPICopyObjectHandler(obj ObjectLayer, instanceType, bucketName string, 
 		}
 		if testCase.metadataGarbage {
 			req.Header.Set("X-Amz-Metadata-Directive", "Unknown")
+		}
+		if err = signRequestV4(req, testCase.accessKey, testCase.secretKey); err != nil {
+			t.Fatal(err)
 		}
 		// Since `apiRouter` satisfies `http.Handler` it has a ServeHTTP to execute the logic of the handler.
 		// Call the ServeHTTP to execute the handler, `func (api objectAPIHandlers) CopyObjectHandler` handles the request.
