@@ -196,6 +196,14 @@ func extractSignedHeaders(signedHeaders []string, r *http.Request) (http.Header,
 			return nil, ErrUnsignedHeaders
 		}
 	}
+	// Copy headers can turn an upload into a read of another object, or change
+	// the source range and conditions. Require them to be covered by the signature.
+	for header := range reqHeaders {
+		header = strings.ToLower(header)
+		if strings.HasPrefix(header, "x-amz-copy-source") && !contains(signedHeaders, header) {
+			return nil, ErrUnsignedHeaders
+		}
+	}
 	return extractedSignedHeaders, ErrNone
 }
 
