@@ -14,8 +14,15 @@ import (
 	xhttp "github.com/minio/minio/cmd/http"
 )
 
-func TestExtractSignedCopyHeaders(t *testing.T) {
+func TestExtractSignedAmzHeaders(t *testing.T) {
 	for _, header := range []string{
+		xhttp.AmzDate,
+		xhttp.AmzSecurityToken,
+		xhttp.AmzMetadataDirective,
+		xhttp.AmzTagDirective,
+		"X-Amz-Meta-Test",
+		"X-Amz-Server-Side-Encryption",
+		"X-Amz-Content-Sha256-Extra",
 		xhttp.AmzCopySource,
 		xhttp.AmzCopySourceRange,
 		xhttp.AmzCopySourceIfMatch,
@@ -45,6 +52,45 @@ func TestExtractSignedCopyHeaders(t *testing.T) {
 	}
 }
 
+func TestSigV4AmzHeaderCompatibility(t *testing.T) {
+	cred := globalActiveCred
+	defer func() { globalActiveCred = cred }()
+	globalActiveCred.SessionToken = "test-session-token"
+	for _, mode := range []string{"authorization", "presigned"} {
+		t.Run(mode, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPut, "http://localhost/destination/object?x-amz-meta-query=value", nil)
+			req.Header.Set("X-Amz-Meta-Test", "signed metadata")
+			if mode == "presigned" {
+				req = signer.PreSignV4(*req, cred.AccessKey, cred.SecretKey, globalActiveCred.SessionToken, globalServerRegion, 60)
+			} else {
+				req = signer.SignV4(*req, cred.AccessKey, cred.SecretKey, globalActiveCred.SessionToken, globalServerRegion)
+			}
+			// The SDK uses UNSIGNED-PAYLOAD when this header is absent during signing.
+			req.Header.Set(xhttp.AmzContentSha256, unsignedPayload)
+			req.Header.Set("User-Agent", "unsigned user agent")
+			if code := reqSignatureV4Verify(req, globalServerRegion, serviceS3); code != ErrNone {
+				t.Fatalf("valid signature with unsigned payload-hash header: %v", code)
+			}
+			for _, test := range []struct {
+				name, header, value string
+				want                APIErrorCode
+			}{
+				{"unsigned-metadata-directive", xhttp.AmzMetadataDirective, "REPLACE", ErrUnsignedHeaders},
+				{"tampered-metadata", "X-Amz-Meta-Test", "changed metadata", ErrSignatureDoesNotMatch},
+				{"tampered-payload-hash", xhttp.AmzContentSha256, emptySHA256, ErrSignatureDoesNotMatch},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					modified := req.Clone(req.Context())
+					modified.Header.Set(test.header, test.value)
+					if code := reqSignatureV4Verify(modified, globalServerRegion, serviceS3); code != test.want {
+						t.Errorf("got %v, want %v", code, test.want)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestStreamingSignedCopyHeaders(t *testing.T) {
 	cred := globalActiveCred
 	req, err := newTestStreamingSignedRequest(http.MethodPut, "http://localhost/destination/object", 4, 4, strings.NewReader("data"), cred.AccessKey, cred.SecretKey)
@@ -54,9 +100,12 @@ func TestStreamingSignedCopyHeaders(t *testing.T) {
 	if _, _, _, _, code := calculateSeedSignature(req); code != ErrNone {
 		t.Fatalf("normal streaming signature: %v", code)
 	}
-	req.Header.Set(xhttp.AmzCopySource, "/source/secret")
-	if _, _, _, _, code := calculateSeedSignature(req); code != ErrUnsignedHeaders {
-		t.Errorf("unsigned copy header on streaming request: got %v, want ErrUnsignedHeaders", code)
+	for _, header := range []string{xhttp.AmzCopySource, "X-Amz-Meta-Test"} {
+		modified := req.Clone(req.Context())
+		modified.Header.Set(header, "/source/secret")
+		if _, _, _, _, code := calculateSeedSignature(modified); code != ErrUnsignedHeaders {
+			t.Errorf("unsigned %s on streaming request: got %v, want ErrUnsignedHeaders", header, code)
+		}
 	}
 }
 
