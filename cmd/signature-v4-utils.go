@@ -149,6 +149,14 @@ func extractSignedHeaders(signedHeaders []string, r *http.Request) (http.Header,
 	if !contains(signedHeaders, "host") {
 		return nil, ErrUnsignedHeaders
 	}
+	// All x-amz- headers must be signed, except x-amz-content-sha256,
+	// whose value is already included as the canonical request's payload hash.
+	for header := range reqHeaders {
+		header = strings.ToLower(header)
+		if strings.HasPrefix(header, "x-amz-") && header != "x-amz-content-sha256" && !contains(signedHeaders, header) {
+			return nil, ErrUnsignedHeaders
+		}
+	}
 	extractedSignedHeaders := make(http.Header)
 	for _, header := range signedHeaders {
 		// `host` will not be found in the headers, can be found in r.Host.
