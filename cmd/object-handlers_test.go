@@ -1965,6 +1965,16 @@ func testAPICopyObjectPartHandler(obj ObjectLayer, instanceType, bucketName stri
 			expectedRespStatus: http.StatusBadRequest,
 		},
 
+		// Test case with ".." path component in source object.
+		{
+			bucketName:         bucketName,
+			uploadID:           uploadID,
+			copySourceHeader:   url.QueryEscape(SlashSeparator + bucketName + SlashSeparator + "dir/../" + objectName),
+			accessKey:          credentials.AccessKey,
+			secretKey:          credentials.SecretKey,
+			expectedRespStatus: http.StatusBadRequest,
+		},
+
 		// Test case - 3.
 		// Test case with new object name is same as object to be copied.
 		// Fail with file not found.
@@ -2500,6 +2510,15 @@ func testAPICopyObjectHandler(obj ObjectLayer, instanceType, bucketName string, 
 			accessKey:          credentials.AccessKey,
 			secretKey:          credentials.SecretKey,
 			expectedRespStatus: http.StatusNotFound,
+		},
+		// Test case - 19, copy source with ".." path component is rejected.
+		19: {
+			bucketName:         bucketName,
+			newObjectName:      "newObject1",
+			copySourceHeader:   url.QueryEscape(SlashSeparator + bucketName + SlashSeparator + "dir/../" + objectName),
+			accessKey:          credentials.AccessKey,
+			secretKey:          credentials.SecretKey,
+			expectedRespStatus: http.StatusBadRequest,
 		},
 	}
 
