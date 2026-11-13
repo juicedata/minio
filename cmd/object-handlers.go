@@ -912,7 +912,8 @@ func (api objectAPIHandlers) CopyObjectHandler(w http.ResponseWriter, r *http.Re
 
 	srcBucket, srcObject := path2BucketObject(cpSrcPath)
 	// If source object is empty or bucket is empty, reply back invalid copy source.
-	if srcObject == "" || srcBucket == "" {
+	// Reject "." and ".." components so the authorized key matches the accessed key.
+	if srcObject == "" || srcBucket == "" || hasBadPathComponent(cpSrcPath) {
 		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrInvalidCopySource), r.URL, guessIsBrowserReq(r))
 		return
 	}
@@ -2185,7 +2186,8 @@ func (api objectAPIHandlers) CopyObjectPartHandler(w http.ResponseWriter, r *htt
 
 	srcBucket, srcObject := path2BucketObject(cpSrcPath)
 	// If source object is empty or bucket is empty, reply back invalid copy source.
-	if srcObject == "" || srcBucket == "" {
+	// Reject "." and ".." components so the authorized key matches the accessed key.
+	if srcObject == "" || srcBucket == "" || hasBadPathComponent(cpSrcPath) {
 		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrInvalidCopySource), r.URL, guessIsBrowserReq(r))
 		return
 	}
