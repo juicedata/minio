@@ -478,6 +478,16 @@ func (api objectAPIHandlers) DeleteMultipleObjectsHandler(w http.ResponseWriter,
 			}
 			continue
 		}
+		if hasBadPathComponent(object.ObjectName) {
+			apiErr := errorCodes.ToAPIErr(ErrInvalidResourceName)
+			dErrs[index] = DeleteError{
+				Code:      apiErr.Code,
+				Message:   apiErr.Description,
+				Key:       object.ObjectName,
+				VersionID: object.VersionID,
+			}
+			continue
+		}
 		if object.VersionID != "" && object.VersionID != NullVersionID {
 			if _, err := uuid.Parse(object.VersionID); err != nil {
 				logger.LogIf(ctx, fmt.Errorf("invalid version-id specified %w", err))
@@ -964,6 +974,11 @@ func (api objectAPIHandlers) PostPolicyBucketHandler(w http.ResponseWriter, r *h
 				return
 			}
 		}
+	}
+
+	if hasBadPathComponent(object) {
+		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrInvalidResourceName), r.URL, guessIsBrowserReq(r))
+		return
 	}
 
 	// Extract metadata to be saved from received Form.
