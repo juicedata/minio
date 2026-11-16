@@ -210,6 +210,14 @@ func testPostPolicyBucketHandler(obj ObjectLayer, instanceType string, t TestErr
 			secretKey:          credentials.SecretKey,
 			malformedBody:      true,
 		},
+		// Bad case key with ".." path component.
+		{
+			objectName:         "test/..",
+			data:               []byte("Hello, World"),
+			expectedRespStatus: http.StatusBadRequest,
+			accessKey:          credentials.AccessKey,
+			secretKey:          credentials.SecretKey,
+		},
 	}
 
 	for i, testCase := range testCasesV4 {

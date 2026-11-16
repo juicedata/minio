@@ -644,6 +644,12 @@ func (web *webAPIHandlers) RemoveObject(r *http.Request, args *RemoveObjectArgs,
 		return toJSONError(ctx, errServerNotInitialized)
 	}
 
+	for _, object := range args.Objects {
+		if hasBadPathComponent(object) {
+			return toJSONError(ctx, errInvalidArgument)
+		}
+	}
+
 	deleteObjects := objectAPI.DeleteObjects
 	if web.CacheAPI() != nil {
 		deleteObjects = web.CacheAPI().DeleteObjects
@@ -1580,6 +1586,16 @@ func (web *webAPIHandlers) DownloadZip(w http.ResponseWriter, r *http.Request) {
 	if decodeErr != nil {
 		writeWebErrorResponse(w, decodeErr)
 		return
+	}
+	if hasBadPathComponent(args.Prefix) {
+		writeWebErrorResponse(w, errInvalidArgument)
+		return
+	}
+	for _, object := range args.Objects {
+		if hasBadPathComponent(object) {
+			writeWebErrorResponse(w, errInvalidArgument)
+			return
+		}
 	}
 
 	var getRetPerms []APIErrorCode

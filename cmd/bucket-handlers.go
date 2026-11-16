@@ -464,6 +464,16 @@ func (api objectAPIHandlers) DeleteMultipleObjectsHandler(w http.ResponseWriter,
 	}
 	dErrs := make([]DeleteError, len(deleteObjects.Objects))
 	for index, object := range deleteObjects.Objects {
+		if hasBadPathComponent(object.ObjectName) {
+			apiErr := errorCodes.ToAPIErr(ErrInvalidObjectName)
+			dErrs[index] = DeleteError{
+				Code:      apiErr.Code,
+				Message:   apiErr.Description,
+				Key:       object.ObjectName,
+				VersionID: object.VersionID,
+			}
+			continue
+		}
 		if apiErrCode := checkRequestAuthType(ctx, r, policy.DeleteObjectAction, bucket, object.ObjectName); apiErrCode != ErrNone {
 			if apiErrCode == ErrSignatureDoesNotMatch || apiErrCode == ErrInvalidAccessKeyID {
 				writeErrorResponse(ctx, w, errorCodes.ToAPIErr(apiErrCode), r.URL, guessIsBrowserReq(r))
@@ -870,6 +880,10 @@ func (api objectAPIHandlers) PostPolicyBucketHandler(w http.ResponseWriter, r *h
 		formValues.Set("Key", strings.Replace(formValues.Get("Key"), "${filename}", fileName, -1))
 	}
 	object := trimLeadingSlash(formValues.Get("Key"))
+	if hasBadPathComponent(object) {
+		writeErrorResponse(ctx, w, errorCodes.ToAPIErr(ErrInvalidObjectName), r.URL, guessIsBrowserReq(r))
+		return
+	}
 
 	successRedirect := formValues.Get("success_action_redirect")
 	successStatus := formValues.Get("success_action_status")

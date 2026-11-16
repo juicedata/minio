@@ -740,6 +740,22 @@ func testAPIDeleteMultipleObjectsHandler(obj ObjectLayer, instanceType, bucketNa
 	anonResponse := generateMultiDeleteResponse(requestList[0].Quiet, nil, getDeleteErrorList(requestList[0].Objects))
 	encodedAnonResponse := encodeResponse(anonResponse)
 
+	// Keys with "." or ".." components are rejected individually, valid keys are still deleted.
+	for _, objectName := range []string{"kept-object", "deleted-object"} {
+		_, err = obj.PutObject(GlobalContext, bucketName, objectName, mustGetPutObjReader(t, bytes.NewReader(contentBytes), int64(len(contentBytes)), "", sha256sum), ObjectOptions{})
+		if err != nil {
+			t.Fatalf("Put Object %s:  Error uploading object: <ERROR> %v", objectName, err)
+		}
+	}
+	invalidKey := "dir/../kept-object"
+	invalidRequest := encodeResponse(DeleteObjectsRequest{Quiet: true, Objects: getObjectToDeleteList([]string{invalidKey, "deleted-object"})})
+	invalidResponse := generateMultiDeleteResponse(true, nil, []DeleteError{{
+		Code:    errorCodes[ErrInvalidObjectName].Code,
+		Message: errorCodes[ErrInvalidObjectName].Description,
+		Key:     invalidKey,
+	}})
+	encodedInvalidResponse := encodeResponse(invalidResponse)
+
 	testCases := []struct {
 		bucket             string
 		objects            []byte
@@ -799,6 +815,16 @@ func testAPIDeleteMultipleObjectsHandler(obj ObjectLayer, instanceType, bucketNa
 			expectedContent:    encodedAnonResponse,
 			expectedRespStatus: http.StatusOK,
 		},
+		// Test case - 6.
+		// Delete objects with a ".." path component in one key.
+		{
+			bucket:             bucketName,
+			objects:            invalidRequest,
+			accessKey:          credentials.AccessKey,
+			secretKey:          credentials.SecretKey,
+			expectedContent:    encodedInvalidResponse,
+			expectedRespStatus: http.StatusOK,
+		},
 	}
 
 	for i, testCase := range testCases {
@@ -839,6 +865,13 @@ func testAPIDeleteMultipleObjectsHandler(obj ObjectLayer, instanceType, bucketNa
 			t.Log(string(testCase.expectedContent), string(actualContent))
 			t.Errorf("Test %d : MinIO %s: Object content differs from expected value.", i+1, instanceType)
 		}
+	}
+
+	if _, err = obj.GetObjectInfo(GlobalContext, bucketName, "kept-object", ObjectOptions{}); err != nil {
+		t.Errorf("MinIO %s: Expected kept-object to survive deletion of %q, got %v", instanceType, invalidKey, err)
+	}
+	if _, err = obj.GetObjectInfo(GlobalContext, bucketName, "deleted-object", ObjectOptions{}); !isErrObjectNotFound(err) {
+		t.Errorf("MinIO %s: Expected deleted-object to be deleted, got %v", instanceType, err)
 	}
 
 	// HTTP request to test the case of `objectLayer` being set to `nil`.

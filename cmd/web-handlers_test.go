@@ -629,6 +629,29 @@ func testRemoveObjectWebHandler(obj ObjectLayer, instanceType string, t TestErrH
 	if !bytes.Contains(b, []byte("Invalid arguments specified")) {
 		t.Fatalf("Expected response wrong %s", string(b))
 	}
+
+	// Keys with "." or ".." components are rejected before deletion.
+	objectName = "kept/object"
+	_, err = obj.PutObject(context.Background(), bucketName, objectName, mustGetPutObjReader(t, bytes.NewReader(data), int64(len(data)), metadata["etag"], ""), ObjectOptions{UserDefined: metadata})
+	if err != nil {
+		t.Fatalf("Was not able to upload an object, %v", err)
+	}
+	rec = httptest.NewRecorder()
+	removeRequest = RemoveObjectArgs{BucketName: bucketName, Objects: []string{"other/../" + objectName}}
+	req, err = newTestWebRPCRequest("web.RemoveObject", authorization, removeRequest)
+	if err != nil {
+		t.Fatalf("Failed to create HTTP request: <ERROR> %v", err)
+	}
+	apiRouter.ServeHTTP(rec, req)
+	if b, err = ioutil.ReadAll(rec.Body); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(b, []byte("Invalid arguments specified")) {
+		t.Fatalf("Expected response wrong %s", string(b))
+	}
+	if _, err = obj.GetObjectInfo(context.Background(), bucketName, objectName, ObjectOptions{}); err != nil {
+		t.Fatalf("Expected %s to survive, got %v", objectName, err)
+	}
 }
 
 func TestWebCreateURLToken(t *testing.T) {
@@ -909,16 +932,11 @@ func testWebHandlerDownloadZip(obj ObjectLayer, instanceType string, t TestErrHa
 		}
 	}
 
-	test := func(token string) (int, []byte) {
+	test := func(token string, args DownloadZipArgs) (int, []byte) {
 		rec := httptest.NewRecorder()
 		path := "/minio/zip" + "?token="
 		if token != "" {
 			path = path + token
-		}
-		args := DownloadZipArgs{
-			Objects:    []string{"one", "b/", "c/"},
-			Prefix:     "a/",
-			BucketName: bucket,
 		}
 
 		var argsData []byte
@@ -938,11 +956,24 @@ func testWebHandlerDownloadZip(obj ObjectLayer, instanceType string, t TestErrHa
 		apiRouter.ServeHTTP(rec, req)
 		return rec.Code, rec.Body.Bytes()
 	}
-	code, _ := test("")
+	args := DownloadZipArgs{
+		Objects:    []string{"one", "b/", "c/"},
+		Prefix:     "a/",
+		BucketName: bucket,
+	}
+	code, _ := test("", args)
 	if code != 403 {
 		t.Fatal("Expected to receive authentication error")
 	}
-	code, data := test(authorization)
+	for _, badArgs := range []DownloadZipArgs{
+		{Objects: []string{"../a/one"}, Prefix: "a/", BucketName: bucket},
+		{Objects: []string{"one"}, Prefix: "b/../a/", BucketName: bucket},
+	} {
+		if code, _ = test(authorization, badArgs); code != http.StatusBadRequest {
+			t.Fatalf("Expected 400 for %+v, got %d", badArgs, code)
+		}
+	}
+	code, data := test(authorization, args)
 	if code != 200 {
 		t.Fatal("web.DownloadsZip() failed")
 	}
