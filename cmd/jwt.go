@@ -19,6 +19,7 @@ package cmd
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	jwtgo "github.com/golang-jwt/jwt/v4"
@@ -51,34 +52,86 @@ var (
 )
 
 func authenticateJWTUsers(accessKey, secretKey string, expiry time.Duration) (string, error) {
-	passedCredential, err := auth.CreateCredentials(accessKey, secretKey)
+	expiresAt := UTCNow().Add(expiry)
+
+	cred, secret, err := authenticateUsersForJWT(accessKey, secretKey, expiresAt)
 	if err != nil {
 		return "", err
-	}
-	expiresAt := UTCNow().Add(expiry)
-	return authenticateJWTUsersWithCredentials(passedCredential, expiresAt)
-}
-
-func authenticateJWTUsersWithCredentials(credentials auth.Credentials, expiresAt time.Time) (string, error) {
-	serverCred := globalActiveCred
-	if serverCred.AccessKey != credentials.AccessKey {
-		var ok bool
-		serverCred, ok = globalIAMSys.GetUser(credentials.AccessKey)
-		if !ok {
-			return "", errInvalidAccessKeyID
-		}
-	}
-
-	if !serverCred.Equal(credentials) {
-		return "", errAuthentication
 	}
 
 	claims := xjwt.NewMapClaims()
 	claims.SetExpiry(expiresAt)
-	claims.SetAccessKey(credentials.AccessKey)
+	claims.SetAccessKey(cred.AccessKey)
+	if cred.ParentUser != "" {
+		claims.SetLDAPUser(cred.ParentUser)
+	}
 
 	jwt := jwtgo.NewWithClaims(jwtgo.SigningMethodHS512, claims)
-	return jwt.SignedString([]byte(serverCred.SecretKey))
+	return jwt.SignedString([]byte(secret))
+}
+
+func authenticateUsersForJWT(accessKey, secretKey string, expiredAt time.Time) (auth.Credentials, string, error) {
+	if globalIAMSys.usersSysType == LDAPUsersSysType {
+		return authenticateLDAPUsersForJWT(accessKey, secretKey, expiredAt)
+	}
+	return authenticateMinIOUsersForJWT(accessKey, secretKey)
+}
+
+func authenticateLDAPUsersForJWT(username, password string, expiredAt time.Time) (auth.Credentials, string, error) {
+	ldapUserDN, ldapGroups, err := globalLDAPConfig.Bind(username, password)
+	if err != nil {
+		return auth.Credentials{}, "", errAuthentication
+	}
+
+	// Check if this user or their groups have a policy applied.
+	ldapPolicies, _ := globalIAMSys.PolicyDBGet(ldapUserDN, false, ldapGroups...)
+	if len(ldapPolicies) == 0 {
+		return auth.Credentials{}, "", errInvalidAccessKeyID
+	}
+
+	m := map[string]interface{}{
+		expClaim: expiredAt.Unix(),
+		ldapUser: ldapUserDN,
+	}
+
+	secret := globalActiveCred.SecretKey
+	cred, err := auth.GetNewCredentialsWithMetadata(m, secret)
+	if err != nil {
+		return auth.Credentials{}, "", errAuthentication
+	}
+
+	cred.ParentUser = ldapUserDN
+	cred.Groups = ldapGroups
+
+	// Set the newly generated credentials, ensure that policies are fixed during the session.
+	if err = globalIAMSys.SetTempUser(cred.AccessKey, cred, strings.Join(ldapPolicies, ",")); err != nil {
+		return auth.Credentials{}, "", errAuthentication
+	}
+
+	// Notify all other MinIO peers to reload temp users
+	for _, nerr := range globalNotificationSys.LoadUser(cred.AccessKey, true) {
+		if nerr.Err != nil {
+			return auth.Credentials{}, "", errAuthentication
+		}
+	}
+
+	return cred, secret, nil
+}
+
+func authenticateMinIOUsersForJWT(accessKey, secretKey string) (auth.Credentials, string, error) {
+	serverCred := globalActiveCred
+	if serverCred.AccessKey != accessKey {
+		var ok bool
+		serverCred, ok = globalIAMSys.GetUser(accessKey)
+		if !ok {
+			return auth.Credentials{}, "", errInvalidAccessKeyID
+		}
+	}
+
+	if serverCred.AccessKey != serverCred.AccessKey && serverCred.SecretKey != secretKey {
+		return auth.Credentials{}, "", errAuthentication
+	}
+	return serverCred, serverCred.SecretKey, nil
 }
 
 func authenticateNode(accessKey, secretKey, audience string) (string, error) {
@@ -119,7 +172,6 @@ func webTokenCallback(claims *xjwt.MapClaims) ([]byte, error) {
 		return nil, errInvalidAccessKeyID
 	}
 	return []byte(cred.SecretKey), nil
-
 }
 
 func isAuthTokenValid(token string) bool {
